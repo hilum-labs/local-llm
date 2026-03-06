@@ -2,6 +2,11 @@
 
 Run LLMs locally in Node.js with an OpenAI-compatible API. No cloud, no API keys, no data leaves your machine.
 
+[![npm](https://img.shields.io/npm/v/local-llm)](https://www.npmjs.com/package/local-llm)
+[![npm downloads](https://img.shields.io/npm/dm/local-llm)](https://www.npmjs.com/package/local-llm)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+![Platform: macOS | Linux | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
+
 ```bash
 npm install local-llm
 ```
@@ -21,6 +26,15 @@ const response = await ai.chat.completions.create({
 console.log(response.choices[0].message.content);
 ```
 
+> Need to run on **mobile**? Check out [`local-llm-rn`](https://www.npmjs.com/package/local-llm-rn) for React Native with Metal (iOS) and Vulkan (Android) GPU acceleration.
+
+## Why local-llm?
+
+- **Not a server.** Unlike Ollama, there's no daemon to run. It's just an npm package.
+- **OpenAI-compatible out of the box.** Unlike node-llama-cpp, you get `chat.completions.create()` with zero boilerplate.
+- **Your data stays local.** Unlike cloud APIs, nothing leaves your machine. No API keys, no usage limits, no latency.
+- **One install.** Native C++ bindings compile automatically. No Python, no Docker, no external processes.
+
 ## Features
 
 - **OpenAI-compatible API** - Same `chat.completions.create()` interface you already know
@@ -31,6 +45,7 @@ console.log(response.choices[0].message.content);
 - **Streaming** - Full streaming support via async iterators
 - **TypeScript-first** - Complete type definitions out of the box
 - **No dependencies** - Native C++ bindings to llama.cpp, no Python, no external servers
+- **Fast** - ~80 tok/s generation on M2 MacBook Pro with Llama 3.2 3B Q4_K_M
 
 ## Platform Support
 
@@ -57,10 +72,11 @@ Any GGUF model from HuggingFace works. Some recommendations:
 
 | Model | Size | Good for |
 |---|---|---|
-| TinyLlama 1.1B Q4_K_M | ~636 MB | Testing, development |
-| Llama 3.1 8B Q4_K_M | ~4.9 GB | General use |
-| Mistral 7B Q4_K_M | ~4.4 GB | General use |
-| Phi-3 Mini Q4_K_M | ~2.2 GB | Lightweight, fast |
+| [TinyLlama 1.1B Q4_K_M](https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF) | ~636 MB | Testing, development |
+| [Llama 3.2 3B Q4_K_M](https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF) | ~1.8 GB | Fast, great quality |
+| [Phi-3 Mini Q4_K_M](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf) | ~2.2 GB | Lightweight, fast |
+| [Llama 3.1 8B Q4_K_M](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF) | ~4.9 GB | Best quality |
+| [Mistral 7B Q4_K_M](https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF) | ~4.4 GB | General use |
 
 ### 3. Use
 
@@ -264,6 +280,22 @@ const models = await manager.listModels();
 // Remove a cached model
 await manager.removeModel('https://huggingface.co/...');
 ```
+
+## Ecosystem
+
+| Package | Description | Install |
+|---|---|---|
+| [`local-llm`](https://www.npmjs.com/package/local-llm) | Node.js inference (this package) | `npm install local-llm` |
+| [`local-llm-rn`](https://www.npmjs.com/package/local-llm-rn) | React Native (iOS Metal, Android Vulkan) | `npm install local-llm-rn` |
+| [`hilum-local-llm-engine`](https://github.com/hilum-labs/hilum-local-llm-engine) | Core C++ engine (llama.cpp fork) | Vendored automatically |
+
+## Contributing
+
+We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Contact
+
+Questions, feedback, or partnership inquiries: [info@hilumlabs.com](mailto:info@hilumlabs.com)
 
 ## License
 
