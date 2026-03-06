@@ -1,11 +1,11 @@
-# local-llm
-
-Run LLMs locally in Node.js with an OpenAI-compatible API. No cloud, no API keys, no data leaves your machine.
-
 [![npm](https://img.shields.io/npm/v/local-llm)](https://www.npmjs.com/package/local-llm)
 [![npm downloads](https://img.shields.io/npm/dm/local-llm)](https://www.npmjs.com/package/local-llm)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Platform: macOS | Linux | Windows](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
+
+# local-llm
+
+Run LLMs locally in Node.js with an OpenAI-compatible API. No cloud, no API keys, no data leaves your machine.
 
 ```bash
 npm install local-llm
