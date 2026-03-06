@@ -1,0 +1,93 @@
+name: Build Native Binaries
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin
+            arch: arm64
+            cmake_flags: "-CDGGML_METAL=ON -CDGGML_METAL_EMBED_LIBRARY=ON -CDGGML_LTO=ON"
+          - os: macos-13
+            platform: darwin
+            arch: x64
+            cmake_flags: "-CDGGML_METAL=ON -CDGGML_METAL_EMBED_LIBRARY=ON -CDGGML_LTO=ON"
+          - os: ubuntu-22.04
+            platform: linux
+            arch: x64
+            cmake_flags: "-CDGGML_NATIVE=OFF -CDGGML_LTO=ON"
+          - os: windows-2022
+            platform: win32
+            arch: x64
+            cmake_flags: "-CDGGML_NATIVE=OFF -CDGGML_LTO=ON"
+
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.platform }}-${{ matrix.arch }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build native addon
+        working-directory: packages/native
+        run: npx cmake-js compile ${{ matrix.cmake_flags }}
+
+      - name: Copy binary to platform package
+        shell: bash
+        run: |
+          PLATFORM_DIR="packages/platforms/${{ matrix.platform }}-${{ matrix.arch }}"
+          cp packages/native/build/Release/hilum_native.node "$PLATFORM_DIR/local-llm.node"
+          ls -la "$PLATFORM_DIR/"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-llm-${{ matrix.platform }}-${{ matrix.arch }}
+          path: packages/platforms/${{ matrix.platform }}-${{ matrix.arch }}/local-llm.node
+          retention-days: 30
+
+      - name: Build TypeScript package
+        run: pnpm --filter local-llm build
+
+      - name: Smoke test — binary loads (non-Windows)
+        if: matrix.platform != 'win32'
+        run: |
+          node -e "
+            const path = require('path');
+            const binary = require(path.join(process.cwd(), 'packages/platforms/${{ matrix.platform }}-${{ matrix.arch }}/local-llm.node'));
+            console.log('Binary loaded OK');
+            console.log('backendVersion:', binary.backendVersion());
+            console.log('backendInfo:', binary.backendInfo().substring(0, 100));
+          "
+
+      - name: Cache test model
+        if: matrix.platform != 'win32'
+        uses: actions/cache@v4
+        with:
+          path: ~/.local-llm/models
+          key: smoke-test-model-tinyllama-q4km
+
+      - name: Smoke test — inference (non-Windows)
+        if: matrix.platform != 'win32'
+        run: npx tsx scripts/ci-smoke-test.ts
+        timeout-minutes: 10

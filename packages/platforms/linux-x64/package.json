@@ -1,0 +1,9 @@
+{
+  "name": "@local-llm/linux-x64",
+  "version": "1.0.0",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "main": "local-llm.node",
+  "files": ["local-llm.node"],
+  "description": "local-llm native binary for Linux x64"
+}

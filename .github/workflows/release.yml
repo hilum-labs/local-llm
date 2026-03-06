@@ -1,0 +1,135 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: darwin
+            arch: arm64
+            cmake_flags: "-CDGGML_METAL=ON -CDGGML_METAL_EMBED_LIBRARY=ON"
+          - os: macos-13
+            platform: darwin
+            arch: x64
+            cmake_flags: "-CDGGML_METAL=ON -CDGGML_METAL_EMBED_LIBRARY=ON"
+          - os: ubuntu-22.04
+            platform: linux
+            arch: x64
+            cmake_flags: ""
+          - os: windows-2022
+            platform: win32
+            arch: x64
+            cmake_flags: ""
+
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.platform }}-${{ matrix.arch }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build native addon
+        working-directory: packages/native
+        run: npx cmake-js compile ${{ matrix.cmake_flags }} --CDLLAMA_BUILD_TESTS=OFF --CDLLAMA_BUILD_EXAMPLES=OFF --CDLLAMA_BUILD_TOOLS=OFF --CDLLAMA_BUILD_SERVER=OFF
+
+      - name: Copy binary to platform package
+        shell: bash
+        run: |
+          PLATFORM_DIR="packages/platforms/${{ matrix.platform }}-${{ matrix.arch }}"
+          cp packages/native/build/Release/hilum_native.node "$PLATFORM_DIR/local-llm.node"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-llm-${{ matrix.platform }}-${{ matrix.arch }}
+          path: packages/platforms/${{ matrix.platform }}-${{ matrix.arch }}/
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    name: Publish to npm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Copy binaries to platform packages
+        run: |
+          for dir in artifacts/local-llm-*/; do
+            platform_name=$(basename "$dir" | sed 's/local-llm-//')
+            target="packages/platforms/$platform_name/"
+            cp "$dir"local-llm.node "$target" 2>/dev/null || true
+            echo "Copied binary to $target"
+            ls -la "$target"
+          done
+
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for dir in packages/platforms/*/; do
+            if [ -f "$dir/local-llm.node" ]; then
+              echo "Publishing $(basename $dir)..."
+              cd "$dir"
+              npm publish --access public
+              cd -
+            else
+              echo "Skipping $(basename $dir) — no binary"
+            fi
+          done
+
+      - name: Build main package
+        run: pnpm --filter local-llm build
+
+      - name: Publish main package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        working-directory: packages/local-llm
+        run: npm publish --access public
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/*/local-llm.node

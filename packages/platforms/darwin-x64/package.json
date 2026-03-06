@@ -1,0 +1,9 @@
+{
+  "name": "@local-llm/darwin-x64",
+  "version": "1.0.0",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "main": "local-llm.node",
+  "files": ["local-llm.node"],
+  "description": "local-llm native binary for macOS Intel"
+}

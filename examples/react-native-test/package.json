@@ -1,0 +1,21 @@
+{
+  "name": "local-llm-rn-test",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "start": "react-native start",
+    "ios": "react-native run-ios",
+    "android": "react-native run-android",
+    "pods": "cd ios && pod install"
+  },
+  "dependencies": {
+    "react": "19.0.0",
+    "react-native": "0.78.0",
+    "local-llm-rn": "file:../../packages/react-native"
+  },
+  "devDependencies": {
+    "@react-native/metro-config": "0.78.0",
+    "@react-native/typescript-config": "0.78.0",
+    "typescript": "~5.7.0"
+  }
+}

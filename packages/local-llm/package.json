@@ -1,0 +1,72 @@
+{
+  "name": "local-llm",
+  "version": "1.0.0",
+  "description": "Run LLMs locally in Node.js with an OpenAI-compatible API",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./native": {
+      "types": "./dist/native.d.ts",
+      "import": "./dist/native.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "llm",
+    "ai",
+    "local",
+    "inference",
+    "llama",
+    "gguf",
+    "openai",
+    "chat",
+    "machine-learning",
+    "gpu",
+    "metal",
+    "on-device"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hilum-labs/local-llm"
+  },
+  "homepage": "https://github.com/hilum-labs/local-llm",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest"
+  },
+  "optionalDependencies": {
+    "@local-llm/native": "workspace:*",
+    "@local-llm/darwin-arm64": "1.0.0",
+    "@local-llm/darwin-x64": "1.0.0",
+    "@local-llm/linux-x64": "1.0.0",
+    "@local-llm/win32-x64": "1.0.0"
+  },
+  "peerDependencies": {
+    "ai": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.1",
+    "@vitest/coverage-v8": "^3.2.4",
+    "tsup": "^8.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^3.2.4"
+  }
+}

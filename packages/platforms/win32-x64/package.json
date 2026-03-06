@@ -1,0 +1,9 @@
+{
+  "name": "@local-llm/win32-x64",
+  "version": "1.0.0",
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "main": "local-llm.node",
+  "files": ["local-llm.node"],
+  "description": "local-llm native binary for Windows x64"
+}
