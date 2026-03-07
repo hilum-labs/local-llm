@@ -17,11 +17,11 @@ jobs:
           - os: macos-14
             platform: darwin
             arch: arm64
-            cmake_flags: "-CDGGML_METAL=ON -CDGGML_METAL_EMBED_LIBRARY=ON"
+            cmake_flags: "--CDGGML_METAL=ON --CDGGML_METAL_EMBED_LIBRARY=ON"
           - os: macos-13
             platform: darwin
             arch: x64
-            cmake_flags: "-CDGGML_METAL=ON -CDGGML_METAL_EMBED_LIBRARY=ON"
+            cmake_flags: "--CDGGML_METAL=ON --CDGGML_METAL_EMBED_LIBRARY=ON"
           - os: ubuntu-22.04
             platform: linux
             arch: x64
