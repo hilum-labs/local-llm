@@ -18,6 +18,10 @@ jobs:
             platform: darwin
             arch: arm64
             cmake_flags: "--CDGGML_METAL=ON --CDGGML_METAL_EMBED_LIBRARY=ON"
+          - os: self-hosted
+            platform: darwin
+            arch: x64
+            cmake_flags: "--CDGGML_METAL=ON --CDGGML_METAL_EMBED_LIBRARY=ON"
           - os: ubuntu-22.04
             platform: linux
             arch: x64
