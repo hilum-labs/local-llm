@@ -1,6 +1,6 @@
 {
   "name": "local-llm",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Run LLMs locally in Node.js with an OpenAI-compatible API",
   "type": "module",
   "main": "dist/index.js",
@@ -48,10 +48,10 @@
   },
   "optionalDependencies": {
     "@local-llm/native": "workspace:*",
-    "@local-llm/darwin-arm64": "1.0.0",
-    "@local-llm/darwin-x64": "1.0.0",
-    "@local-llm/linux-x64": "1.0.0",
-    "@local-llm/win32-x64": "1.0.0"
+    "@local-llm/darwin-arm64": "1.0.1",
+    "@local-llm/darwin-x64": "1.0.1",
+    "@local-llm/linux-x64": "1.0.1",
+    "@local-llm/win32-x64": "1.0.1"
   },
   "peerDependencies": {
     "ai": ">=4.0.0"
