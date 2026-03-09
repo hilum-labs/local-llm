@@ -62,7 +62,10 @@ execute_process(
 string(REPLACE "\"" "" NODE_ADDON_API_DIR ${NODE_ADDON_API_DIR})
 
 # N-API addon
-add_library(${PROJECT_NAME} SHARED src/addon.cpp)
+add_library(${PROJECT_NAME} SHARED
+  src/addon.cpp
+  src/llama_build_info_stub.cpp
+)
 set_target_properties(${PROJECT_NAME} PROPERTIES
   PREFIX ""
   SUFFIX ".node"
