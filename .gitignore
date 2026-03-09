@@ -9,3 +9,6 @@ Thumbs.db
 
 # cpp/ is a symlink in dev, real directory only during prepack
 packages/react-native/cpp
+
+# Vendored engine submodule; source-of-truth is external repo
+vendor/
