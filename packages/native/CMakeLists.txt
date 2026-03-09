@@ -35,7 +35,9 @@ if(NOT DEFINED GGML_NATIVE)
 endif()
 
 # Build hilum-local-llm-engine (llama + ggml)
-set(LLAMA_BUILD_COMMON OFF CACHE BOOL "Not needed — libhilum replaces common" FORCE)
+# Keep common ON: hilum's json-schema-to-grammar currently depends on symbols
+# implemented in common/common.cpp (e.g. string_join/string_split/string_repeat).
+set(LLAMA_BUILD_COMMON ON CACHE BOOL "Build common utils needed by libhilum" FORCE)
 
 # Enable libhilum
 set(HILUM_BUILD_LIB ON CACHE BOOL "Build libhilum shared C API" FORCE)
@@ -103,6 +105,7 @@ endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE
   ${CMAKE_JS_LIB}
   hilum
+  common
 )
 
 # On Apple, ensure Metal frameworks are linked
