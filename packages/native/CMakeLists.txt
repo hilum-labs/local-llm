@@ -5,6 +5,17 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Windows/MSVC: suppress high-volume conversion/sign warnings in this native build.
+if(MSVC)
+  add_compile_options(
+    /wd4018 # signed/unsigned mismatch
+    /wd4101 # unreferenced local variable
+    /wd4244 # narrowing conversion
+    /wd4267 # size_t -> smaller type
+    /wd4305 # truncation to smaller floating type
+  )
+endif()
+
 # Static linking — single .node file with no shared lib deps
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
@@ -46,34 +57,6 @@ endif()
 if(NOT TARGET hilum)
   message(FATAL_ERROR
     "libhilum target not found. Ensure vendor/hilum-local-llm-engine includes the 'hilum/' C API directory, or update the submodule to a compatible revision.")
-endif()
-
-# MSVC emits a large volume of narrowing/sign-conversion warnings from vendor code.
-# Suppress the noisy warning IDs only for targets that come from the vendor tree.
-if(MSVC)
-  get_property(_all_targets GLOBAL PROPERTY TARGETS)
-  foreach(_t IN LISTS _all_targets)
-    get_target_property(_type ${_t} TYPE)
-    if(_type STREQUAL "INTERFACE_LIBRARY" OR _type STREQUAL "UTILITY")
-      continue()
-    endif()
-
-    get_target_property(_src_dir ${_t} SOURCE_DIR)
-    if(NOT _src_dir)
-      continue()
-    endif()
-
-    string(FIND "${_src_dir}" "${VENDOR_DIR}" _is_vendor_target)
-    if(_is_vendor_target EQUAL 0)
-      target_compile_options(${_t} PRIVATE
-        /wd4018 # signed/unsigned mismatch
-        /wd4101 # unreferenced local variable
-        /wd4244 # narrowing conversion
-        /wd4267 # size_t -> smaller type
-        /wd4305 # truncation to smaller floating type
-      )
-    endif()
-  endforeach()
 endif()
 
 # Vendor uses CMAKE_SOURCE_DIR for its include path, which resolves to our
