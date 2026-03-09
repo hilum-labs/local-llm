@@ -34,6 +34,15 @@ add_subdirectory(
   ${CMAKE_CURRENT_BINARY_DIR}/hilum-local-llm-engine
 )
 
+# Some vendor snapshots may not honor HILUM_BUILD_LIB from parent cache.
+# Ensure the shared C API target exists for linking.
+if(NOT TARGET hilum)
+  add_subdirectory(
+    ${VENDOR_DIR}/hilum
+    ${CMAKE_CURRENT_BINARY_DIR}/hilum-local-llm-engine/hilum
+  )
+endif()
+
 # Vendor uses CMAKE_SOURCE_DIR for its include path, which resolves to our
 # project root instead of the vendor root. Fix by adding the correct path.
 target_include_directories(llama PUBLIC $<BUILD_INTERFACE:${VENDOR_DIR}/include>)
@@ -57,6 +66,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 target_include_directories(${PROJECT_NAME} PRIVATE
   ${CMAKE_JS_INC}
   ${NODE_ADDON_API_DIR}
+  ${VENDOR_DIR}
   ${VENDOR_DIR}/hilum
   ${VENDOR_DIR}/vendor
 )

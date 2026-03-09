@@ -10,6 +10,7 @@ export type NativeMtmdContext = Brand<object, 'NativeMtmdContext'>;
 export interface NativeAddon {
   backendInfo(): string;
   backendVersion(): string;
+  apiVersion(): number;
 
   loadModel(
     path: string,
@@ -101,6 +102,7 @@ export interface NativeAddon {
   warmup(model: NativeModel, ctx: NativeContext): void;
 
   kvCacheClear(ctx: NativeContext, fromPos: number): void;
+  stopStream(ctx: NativeContext): void;
 
   /** Returns true if the OS is in low-power / battery-saver mode. */
   isLowPowerMode?(): boolean;

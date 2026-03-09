@@ -19,7 +19,13 @@
 #include <fstream>
 #endif
 
+#if __has_include("hilum_llm.h")
 #include "hilum_llm.h"
+#elif __has_include("hilum/hilum_llm.h")
+#include "hilum/hilum_llm.h"
+#else
+#error "hilum_llm.h not found. Ensure vendor/hilum-local-llm-engine is checked out."
+#endif
 #include <nlohmann/json.hpp>
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -44,6 +50,10 @@ Napi::Value BackendInfo(const Napi::CallbackInfo & info) {
 
 Napi::Value BackendVersion(const Napi::CallbackInfo & info) {
     return Napi::String::New(info.Env(), hilum_backend_version());
+}
+
+Napi::Value ApiVersion(const Napi::CallbackInfo & info) {
+    return Napi::Number::New(info.Env(), static_cast<double>(hilum_api_version()));
 }
 
 // ── Model lifecycle ─────────────────────────────────────────────────────────
@@ -188,6 +198,16 @@ Napi::Value KvCacheClear(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
     hilum_context_kv_clear(get_ctx(info[0]), info[1].As<Napi::Number>().Int32Value());
+    return env.Undefined();
+}
+
+Napi::Value StopStream(const Napi::CallbackInfo & info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsExternal()) {
+        Napi::TypeError::New(env, "stopStream(ctx)").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    hilum_cancel(get_ctx(info[0]));
     return env.Undefined();
 }
 
@@ -1110,6 +1130,7 @@ Napi::Value Benchmark(const Napi::CallbackInfo & info) {
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("backendInfo",            Napi::Function::New(env, BackendInfo));
     exports.Set("backendVersion",         Napi::Function::New(env, BackendVersion));
+    exports.Set("apiVersion",            Napi::Function::New(env, ApiVersion));
     exports.Set("loadModel",             Napi::Function::New(env, LoadModel));
     exports.Set("loadModelFromBuffer",   Napi::Function::New(env, LoadModelFromBuffer));
     exports.Set("getModelSize",          Napi::Function::New(env, GetModelSize));
@@ -1123,6 +1144,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("inferSync",             Napi::Function::New(env, InferSync));
     exports.Set("inferStream",           Napi::Function::New(env, InferStream));
     exports.Set("kvCacheClear",          Napi::Function::New(env, KvCacheClear));
+    exports.Set("stopStream",           Napi::Function::New(env, StopStream));
     exports.Set("setLogCallback",        Napi::Function::New(env, SetLogCallback));
     exports.Set("setLogLevel",           Napi::Function::New(env, SetLogLevel));
     exports.Set("createMtmdContext",     Napi::Function::New(env, CreateMtmdContext));

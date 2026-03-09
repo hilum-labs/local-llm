@@ -3,6 +3,8 @@ import { cpus } from 'node:os';
 import { loadNativeAddon, type NativeAddon, type NativeModel, type NativeContext, type NativeMtmdContext } from './native.js';
 import type { ModelOptions, ContextOptions, EmbeddingContextOptions, EmbeddingPoolingType, GenerateOptions, ChatMessage, ContentPart, ComputeMode, ResponseFormat, FlashAttentionMode, KvCacheType, QuantizeOptions, QuantizationType, BatchResult, InferenceMetrics, BenchmarkOptions, BenchmarkResult } from './types.js';
 
+const HILUM_API_VERSION_MAJOR_EXPECTED = 1;
+
 /** Strip keys whose value is undefined so the native addon doesn't see them. */
 function defined<T extends Record<string, unknown>>(obj: T): Partial<T> {
   const out: Record<string, unknown> = {};
@@ -59,6 +61,22 @@ export function optimalThreadCount(): number {
   }
 }
 
+function ensureApiMajorVersion(addon: NativeAddon): void {
+  if (typeof addon.apiVersion !== 'function') {
+    throw new Error(
+      'Native addon does not expose apiVersion(); update/rebuild native bindings to match this package.',
+    );
+  }
+
+  const runtime = addon.apiVersion();
+  const runtimeMajor = (runtime >>> 16) & 0xff;
+  if (runtimeMajor !== HILUM_API_VERSION_MAJOR_EXPECTED) {
+    throw new Error(
+      `libhilum major version mismatch: expected ${HILUM_API_VERSION_MAJOR_EXPECTED}, got ${runtimeMajor} (raw=${runtime}).`,
+    );
+  }
+}
+
 export class Model {
   private native: NativeAddon;
   private handle: NativeModel | null;
@@ -66,6 +84,7 @@ export class Model {
 
   constructor(path: string, options?: ModelOptions) {
     this.native = loadNativeAddon();
+    ensureApiMajorVersion(this.native);
     const gpuLayers = options?.gpuLayers ?? resolveCompute(options?.compute, this.native);
     try {
       this.handle = this.native.loadModel(path, defined({
@@ -81,6 +100,7 @@ export class Model {
   static async load(path: string, options?: ModelOptions): Promise<Model> {
     const instance = Object.create(Model.prototype) as Model;
     instance.native = loadNativeAddon();
+    ensureApiMajorVersion(instance.native);
     const gpuLayers = options?.gpuLayers ?? resolveCompute(options?.compute, instance.native);
     try {
       const result = instance.native.loadModel(path, defined({
@@ -98,6 +118,7 @@ export class Model {
   static fromBuffer(buffer: Buffer, options?: ModelOptions): Model {
     const instance = Object.create(Model.prototype) as Model;
     instance.native = loadNativeAddon();
+    ensureApiMajorVersion(instance.native);
     const gpuLayers = options?.gpuLayers ?? resolveCompute(options?.compute, instance.native);
     try {
       instance.handle = instance.native.loadModelFromBuffer(buffer, defined({
@@ -285,6 +306,7 @@ export class InferenceContext {
       let text = await this.collectStream(
         (cb) => this.native.inferStream(this.model, ctx, prompt, opts, cb),
         options?.signal,
+        () => this.native.stopStream(ctx),
       );
       if (options?.stop?.length) {
         text = truncateAtStopSequence(text, options.stop);
@@ -311,6 +333,7 @@ export class InferenceContext {
       for await (const token of this.streamInternal(
         (cb) => this.native.inferStream(this.model, ctx, prompt, opts, cb),
         options,
+        () => this.native.stopStream(ctx),
       )) {
         generatedParts.push(token);
         yield token;
@@ -335,6 +358,7 @@ export class InferenceContext {
       let text = await this.collectStream(
         (cb) => this.native.inferStreamVision(this.model, ctx, mtmd, prompt, imageBuffers, opts, cb),
         options?.signal,
+        () => this.native.stopStream(ctx),
       );
       if (options?.stop?.length) {
         text = truncateAtStopSequence(text, options.stop);
@@ -360,6 +384,7 @@ export class InferenceContext {
       yield* this.streamInternal(
         (cb) => this.native.inferStreamVision(this.model, ctx, this.mtmdCtx!, prompt, imageBuffers, opts, cb),
         options,
+        () => this.native.stopStream(ctx),
       );
     } finally {
       release();
@@ -373,6 +398,7 @@ export class InferenceContext {
   private async *streamInternal(
     startInference: (cb: (error: Error | null, token: string | null) => void) => void,
     options?: GenerateOptions,
+    cancelInference?: () => void,
   ): AsyncGenerator<string> {
     const stop = options?.stop;
     const signal = options?.signal;
@@ -395,7 +421,13 @@ export class InferenceContext {
         resolve = r;
       });
 
-    const onAbort = () => { queue.push({ done: true }); notify(); };
+    const onAbort = () => {
+      try {
+        cancelInference?.();
+      } catch {}
+      queue.push({ done: true });
+      notify();
+    };
     signal?.addEventListener('abort', onAbort, { once: true });
 
     startInference((error, token) => {
@@ -461,11 +493,17 @@ export class InferenceContext {
   private collectStream(
     start: (cb: (error: Error | null, token: string | null) => void) => void,
     signal?: AbortSignal,
+    cancelInference?: () => void,
   ): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       const parts: string[] = [];
 
-      const onAbort = () => resolve(parts.join(''));
+      const onAbort = () => {
+        try {
+          cancelInference?.();
+        } catch {}
+        resolve(parts.join(''));
+      };
       signal?.addEventListener('abort', onAbort, { once: true });
 
       start((error, token) => {

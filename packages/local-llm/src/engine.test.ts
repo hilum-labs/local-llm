@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const mockNative = {
   backendInfo: vi.fn(() => 'Metal'),
   backendVersion: vi.fn(() => '1.0.0'),
+  apiVersion: vi.fn(() => (1 << 16)),
   loadModel: vi.fn(() => ({ __brand: 'NativeModel' })),
   loadModelFromBuffer: vi.fn(() => ({ __brand: 'NativeModel' })),
   createContext: vi.fn(() => ({ __brand: 'NativeContext' })),
@@ -31,6 +32,7 @@ const mockNative = {
   freeModel: vi.fn(),
   freeContext: vi.fn(),
   kvCacheClear: vi.fn(),
+  stopStream: vi.fn(),
   createMtmdContext: vi.fn(() => ({ __brand: 'NativeMtmdContext' })),
   freeMtmdContext: vi.fn(),
   supportVision: vi.fn(() => true),
