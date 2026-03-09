@@ -5,6 +5,7 @@
   "scripts": {
     "build:native": "pnpm --filter @local-llm/native build",
     "build": "pnpm --filter local-llm build",
+    "release": "node scripts/release.mjs",
     "test": "npx tsx scripts/test-full.ts",
     "test:unit": "pnpm --filter local-llm test",
     "test:integration": "npx tsx scripts/test-full.ts",
