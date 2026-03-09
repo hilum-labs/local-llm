@@ -35,12 +35,17 @@ add_subdirectory(
 )
 
 # Some vendor snapshots may not honor HILUM_BUILD_LIB from parent cache.
-# Ensure the shared C API target exists for linking.
-if(NOT TARGET hilum)
+# Ensure the shared C API target exists for linking when the hilum dir exists.
+if(NOT TARGET hilum AND EXISTS "${VENDOR_DIR}/hilum/CMakeLists.txt")
   add_subdirectory(
     ${VENDOR_DIR}/hilum
     ${CMAKE_CURRENT_BINARY_DIR}/hilum-local-llm-engine/hilum
   )
+endif()
+
+if(NOT TARGET hilum)
+  message(FATAL_ERROR
+    "libhilum target not found. Ensure vendor/hilum-local-llm-engine includes the 'hilum/' C API directory, or update the submodule to a compatible revision.")
 endif()
 
 # Vendor uses CMAKE_SOURCE_DIR for its include path, which resolves to our
