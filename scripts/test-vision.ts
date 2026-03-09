@@ -1,4 +1,4 @@
-import { LocalAI } from '../packages/local-llm/src/index.js';
+import { LocalLLM } from '../packages/local-llm/src/index.js';
 import { readFileSync } from 'node:fs';
 
 let passed = 0;
@@ -37,7 +37,7 @@ async function main() {
   // 1. Create vision-enabled instance
   console.log('--- Init with projector ---');
   let lastPct = -1;
-  const ai = await LocalAI.create({
+  const ai = await LocalLLM.create({
     model: modelPath,
     projector: projectorPath,
     compute: 'auto',

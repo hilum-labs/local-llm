@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { cpus } from 'node:os';
 import { loadNativeAddon, type NativeAddon, type NativeModel, type NativeContext, type NativeMtmdContext } from './native.js';
-import type { ModelOptions, ContextOptions, EmbeddingContextOptions, EmbeddingPoolingType, GenerateOptions, ChatMessage, ContentPart, ComputeMode, ResponseFormat, FlashAttentionMode, KvCacheType, QuantizeOptions, QuantizationType, BatchResult } from './types.js';
+import type { ModelOptions, ContextOptions, EmbeddingContextOptions, EmbeddingPoolingType, GenerateOptions, ChatMessage, ContentPart, ComputeMode, ResponseFormat, FlashAttentionMode, KvCacheType, QuantizeOptions, QuantizationType, BatchResult, InferenceMetrics, BenchmarkOptions, BenchmarkResult } from './types.js';
 
 /** Strip keys whose value is undefined so the native addon doesn't see them. */
 function defined<T extends Record<string, unknown>>(obj: T): Partial<T> {
@@ -42,25 +42,21 @@ class Mutex {
 
 /**
  * Detect the optimal thread count for LLM inference.
- * On hyperthreaded systems, uses physical core count.
- * On heterogeneous systems (big.LITTLE / P+E), uses performance cores only.
+ * Delegates to the C engine which uses platform-specific APIs:
+ * - macOS: P-core count via sysctl, low-power mode detection
+ * - Linux: big.LITTLE detection via cpufreq sysfs, battery state
+ * - Fallback: half of hardware_concurrency (avoids hyperthreads)
  */
 export function optimalThreadCount(): number {
-  const cores = cpus();
-  if (cores.length === 0) return 1;
-
-  const speeds = cores.map((c) => c.speed);
-  const uniqueSpeeds = new Set(speeds);
-
-  if (uniqueSpeeds.size <= 1) {
-    // Homogeneous cores — assume hyperthreading, use half
+  try {
+    const addon = loadNativeAddon();
+    return addon.optimalThreadCount();
+  } catch {
+    // Native addon not loaded yet — JS fallback
+    const cores = cpus();
+    if (cores.length === 0) return 4;
     return Math.max(1, Math.floor(cores.length / 2));
   }
-
-  // Heterogeneous (big.LITTLE / P+E cores) — use P-cores only
-  const maxSpeed = Math.max(...speeds);
-  const pCores = cores.filter((c) => c.speed === maxSpeed);
-  return Math.max(1, pCores.length);
 }
 
 export class Model {
@@ -118,6 +114,11 @@ export class Model {
     return this.native.getModelSize(this.ensureHandle());
   }
 
+  /** The underlying native model handle (for passing to createContext as draft model). */
+  get nativeHandle(): NativeModel {
+    return this.ensureHandle();
+  }
+
   private ensureHandle(): NativeModel {
     if (!this.handle) throw new Error('Model has been disposed');
     return this.handle;
@@ -142,7 +143,7 @@ export class Model {
     return this.mtmdHandle;
   }
 
-  createContext(options?: ContextOptions): InferenceContext {
+  createContext(options?: ContextOptions & { draftModel?: NativeModel }): InferenceContext {
     try {
       const handle = this.native.createContext(this.ensureHandle(), defined({
         n_ctx: options?.contextSize,
@@ -152,6 +153,8 @@ export class Model {
         type_k: options?.kvCacheTypeK ? kvCacheTypeToNative(options.kvCacheTypeK) : undefined,
         type_v: options?.kvCacheTypeV ? kvCacheTypeToNative(options.kvCacheTypeV) : undefined,
         n_seq_max: options?.maxSequences,
+        draft_model: options?.draftModel,
+        draft_n_max: options?.draftNMax,
       }));
       return new InferenceContext(this.native, this.ensureHandle(), handle, this.mtmdHandle);
     } catch (err) {
@@ -541,6 +544,38 @@ export class InferenceContext {
     }
   }
 
+  /** Run a single-token warmup pass to prime GPU shaders and CPU caches. */
+  warmup(): void {
+    this.native.warmup(this.model, this.ensureHandle());
+  }
+
+  /** Read performance metrics from the most recent inference call. */
+  getPerf(): InferenceMetrics | null {
+    return this.native.getPerf(this.ensureHandle());
+  }
+
+  /**
+   * Run a benchmark entirely in the C engine: evaluate a synthetic prompt
+   * then generate tokens, repeating for the requested number of iterations.
+   * No FFI round-trips per iteration — timing is measured natively.
+   */
+  benchmark(options?: BenchmarkOptions): BenchmarkResult {
+    this.cachedTokenIds = [];
+    const result = this.native.benchmark(this.model, this.ensureHandle(), {
+      promptTokens: options?.promptTokens,
+      generateTokens: options?.generateTokens,
+      iterations: options?.iterations,
+    });
+    return {
+      promptTokensPerSec: result.promptTokensPerSec,
+      generatedTokensPerSec: result.generatedTokensPerSec,
+      ttftMs: result.ttftMs,
+      totalMs: result.totalMs,
+      iterations: result.iterations,
+      individual: [],
+    };
+  }
+
   dispose(): void {
     this.cachedTokenIds = [];
     if (this.handle) {
@@ -623,6 +658,7 @@ function mapGenerateOptions(native: NativeAddon, options?: GenerateOptions) {
     seed: options?.seed,
     grammar: grammarOpts.grammar,
     grammar_root: grammarOpts.grammar_root,
+    onPromptProgress: options?.onPromptProgress,
   });
 }
 

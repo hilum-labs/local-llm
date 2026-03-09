@@ -12,9 +12,9 @@ npm install local-llm
 ```
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -46,6 +46,7 @@ console.log(response.choices[0].message.content);
 - **TypeScript-first** - Complete type definitions out of the box
 - **No dependencies** - Native C++ bindings to llama.cpp, no Python, no external servers
 - **Fast** - ~80 tok/s generation on M2 MacBook Pro with Llama 3.2 3B Q4_K_M
+- **Speculative decoding** - Use a small draft model for 2-3x faster generation with zero quality loss
 
 ## Platform Support
 
@@ -81,9 +82,9 @@ Any GGUF model from HuggingFace works. Some recommendations:
 ### 3. Use
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -117,9 +118,9 @@ ai.dispose();
 
 ```typescript
 import { generateText } from 'ai';
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({ model: 'user/repo/model.gguf' });
+const ai = await LocalLLM.create({ model: 'user/repo/model.gguf' });
 const { text } = await generateText({ model: ai.languageModel(), prompt: 'Hello!' });
 console.log(text);
 ai.dispose();
@@ -131,10 +132,10 @@ Pre-download a model at app startup so users don't wait:
 
 ```typescript
 // App startup — download runs in the background, app doesn't block
-LocalAI.preload('user/repo/model.gguf');
+LocalLLM.preload('user/repo/model.gguf');
 
 // Later, when AI is needed — cached, create() is fast
-const ai = await LocalAI.create({ model: 'user/repo/model.gguf' });
+const ai = await LocalLLM.create({ model: 'user/repo/model.gguf' });
 ```
 
 ### Vision / Multimodal
@@ -142,9 +143,9 @@ const ai = await LocalAI.create({ model: 'user/repo/model.gguf' });
 Send images alongside text using the same OpenAI GPT-4V content format. Requires a vision model and its projector file:
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'Qwen/Qwen3-VL-8B-Instruct-GGUF/Qwen3VL-8B-Instruct-Q4_K_M.gguf',
   projector: 'Qwen/Qwen3-VL-8B-Instruct-GGUF/mmproj-Qwen3VL-8B-Instruct-F16.gguf',
 });
@@ -169,7 +170,7 @@ Images can be provided as `data:` URIs (base64), local file paths, or HTTP URLs.
 ## Configuration
 
 ```typescript
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   // Model source (required)
   model: 'user/repo/file.gguf',       // HuggingFace shorthand
   // model: 'https://huggingface.co/...', // Full URL
@@ -188,6 +189,13 @@ const ai = await LocalAI.create({
   contextSize: 2048,   // Context window size
   batchSize: 512,      // Batch size for prompt processing
   threads: 4,          // CPU thread count
+
+  // Performance
+  warmup: true,          // Warmup on load (eliminates cold-start). Default: true
+
+  // Speculative decoding (optional — 2-3x faster generation)
+  // draftModel: 'user/repo/small-model.gguf',  // Small model from same family
+  // draftNMax: 16,                              // Max draft tokens per step
 
   // Download options
   cacheDir: '~/.local-llm/models',  // Model cache directory
@@ -285,8 +293,8 @@ await manager.removeModel('https://huggingface.co/...');
 
 | Package | Description | Install |
 |---|---|---|
-| [`local-llm`](https://www.npmjs.com/package/local-llm) | Node.js inference (this package) | `npm install local-llm` |
-| [`local-llm-rn`](https://www.npmjs.com/package/local-llm-rn) | React Native (iOS Metal, Android Vulkan) | `npm install local-llm-rn` |
+| [`local-llm`](https://www.npmjs.com/package/local-llm) | Node.js / Bun / Electron (this package) | `npm install local-llm` |
+| [`local-llm-rn`](https://github.com/hilum-labs/local-llm-rn) | React Native / Expo (iOS Metal, Android Vulkan) | `npm install local-llm-rn` |
 | [`hilum-local-llm-engine`](https://github.com/hilum-labs/hilum-local-llm-engine) | Core C++ engine (llama.cpp fork) | Vendored automatically |
 
 ## Contributing

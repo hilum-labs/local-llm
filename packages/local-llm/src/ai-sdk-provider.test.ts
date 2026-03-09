@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { LocalAILanguageModel } from './ai-sdk-provider.js';
+import { LocalLLMProvider } from './ai-sdk-provider.js';
 
 function createMockModel(options?: { tokenizeLength?: number }) {
   const tokenLen = options?.tokenizeLength ?? 5;
@@ -39,12 +39,12 @@ function createMockContext(options?: {
   };
 }
 
-describe('LocalAILanguageModel', () => {
+describe('LocalLLMProvider', () => {
   describe('properties', () => {
     it('has correct specificationVersion, provider, modelId', () => {
       const model = createMockModel();
       const context = createMockContext();
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       expect(lm.specificationVersion).toBe('v3');
       expect(lm.provider).toBe('local-llm');
@@ -57,7 +57,7 @@ describe('LocalAILanguageModel', () => {
     it('returns correct result shape', async () => {
       const model = createMockModel();
       const context = createMockContext({ generateResult: 'Generated text' });
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       const result = await lm.doGenerate({
         prompt: [{ role: 'user', content: 'Hello' }],
@@ -72,7 +72,7 @@ describe('LocalAILanguageModel', () => {
     it('finishReason is "length" when output reaches maxOutputTokens', async () => {
       const model = createMockModel({ tokenizeLength: 10 });
       const context = createMockContext({ generateResult: 'Long text' });
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       const result = await lm.doGenerate({
         prompt: [{ role: 'user', content: 'Hello' }],
@@ -85,7 +85,7 @@ describe('LocalAILanguageModel', () => {
     it('finishReason is "stop" when output is shorter than maxOutputTokens', async () => {
       const model = createMockModel({ tokenizeLength: 3 });
       const context = createMockContext({ generateResult: 'Short' });
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       const result = await lm.doGenerate({
         prompt: [{ role: 'user', content: 'Hello' }],
@@ -100,7 +100,7 @@ describe('LocalAILanguageModel', () => {
     it('converts system/user/assistant messages', async () => {
       const model = createMockModel();
       const context = createMockContext();
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       await lm.doGenerate({
         prompt: [
@@ -123,7 +123,7 @@ describe('LocalAILanguageModel', () => {
     it('converts tool messages to user messages', async () => {
       const model = createMockModel();
       const context = createMockContext();
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       await lm.doGenerate({
         prompt: [
@@ -144,7 +144,7 @@ describe('LocalAILanguageModel', () => {
     it('handles array content parts (text type)', async () => {
       const model = createMockModel();
       const context = createMockContext();
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       await lm.doGenerate({
         prompt: [
@@ -169,7 +169,7 @@ describe('LocalAILanguageModel', () => {
     it('handles JSON response format without warning', async () => {
       const model = createMockModel();
       const context = createMockContext();
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       const result = await lm.doGenerate({
         prompt: [{ role: 'user', content: 'Hello' }],
@@ -182,7 +182,7 @@ describe('LocalAILanguageModel', () => {
     it('warns about tools', async () => {
       const model = createMockModel();
       const context = createMockContext();
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       const result = await lm.doGenerate({
         prompt: [{ role: 'user', content: 'Hello' }],
@@ -200,7 +200,7 @@ describe('LocalAILanguageModel', () => {
     it('passes presencePenalty without warning', async () => {
       const model = createMockModel();
       const context = createMockContext();
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       const result = await lm.doGenerate({
         prompt: [{ role: 'user', content: 'Hello' }],
@@ -213,7 +213,7 @@ describe('LocalAILanguageModel', () => {
     it('no warnings when no unsupported settings', async () => {
       const model = createMockModel();
       const context = createMockContext();
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       const result = await lm.doGenerate({
         prompt: [{ role: 'user', content: 'Hello' }],
@@ -227,7 +227,7 @@ describe('LocalAILanguageModel', () => {
     it('routes to generateVision when image parts are present', async () => {
       const model = createMockModel();
       const context = createMockContext({ generateResult: 'A cat' });
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       const result = await lm.doGenerate({
         prompt: [{
@@ -247,7 +247,7 @@ describe('LocalAILanguageModel', () => {
     it('uses text-only path when no image parts', async () => {
       const model = createMockModel();
       const context = createMockContext({ generateResult: 'Hello' });
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       await lm.doGenerate({
         prompt: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
@@ -262,7 +262,7 @@ describe('LocalAILanguageModel', () => {
     it('emits stream-start, text-start, text-delta(s), text-end, finish', async () => {
       const model = createMockModel({ tokenizeLength: 2 });
       const context = createMockContext({ streamTokens: ['Hi', ' there'] });
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       const { stream } = await lm.doStream({
         prompt: [{ role: 'user', content: 'Hello' }],
@@ -289,7 +289,7 @@ describe('LocalAILanguageModel', () => {
     it('includes warnings in stream-start for unsupported settings', async () => {
       const model = createMockModel();
       const context = createMockContext({ streamTokens: ['A'] });
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       const { stream } = await lm.doStream({
         prompt: [{ role: 'user', content: 'Hello' }],
@@ -306,7 +306,7 @@ describe('LocalAILanguageModel', () => {
     it('finishReason is "length" when tokens reach maxOutputTokens', async () => {
       const model = createMockModel({ tokenizeLength: 10 });
       const context = createMockContext({ streamTokens: ['tokens'] });
-      const lm = new LocalAILanguageModel(model as any, context as any, 'test-model');
+      const lm = new LocalLLMProvider(model as any, context as any, 'test-model');
 
       const { stream } = await lm.doStream({
         prompt: [{ role: 'user', content: 'Hello' }],

@@ -187,7 +187,7 @@ function collectWarnings(options: LanguageModelV3CallOptions): Array<{ type: str
 /**
  * Vercel AI SDK LanguageModelV3 provider backed by a local llama.cpp model.
  */
-export class LocalAILanguageModel implements LanguageModelV3 {
+export class LocalLLMProvider implements LanguageModelV3 {
   readonly specificationVersion = 'v3' as const;
   readonly provider = 'local-llm';
   readonly modelId: string;

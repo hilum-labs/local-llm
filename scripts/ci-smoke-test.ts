@@ -5,7 +5,7 @@
  *
  * Usage: npx tsx scripts/ci-smoke-test.ts [model-path]
  */
-import { LocalAI } from '../packages/local-llm/src/index.js';
+import { LocalLLM } from '../packages/local-llm/src/index.js';
 
 const MODEL_SPEC =
   process.argv[2] ??
@@ -31,7 +31,7 @@ async function main() {
   // 1. Create + init
   console.log('--- Init ---');
   let lastPct = -1;
-  const ai = await LocalAI.create({
+  const ai = await LocalLLM.create({
     model: MODEL_SPEC,
     compute: 'auto',
     contextSize: 2048,
@@ -44,7 +44,7 @@ async function main() {
     },
   });
   if (lastPct >= 0) console.log();
-  assert('LocalAI.create() succeeded', true);
+  assert('LocalLLM.create() succeeded', true);
 
   // 2. Non-streaming chat completion
   console.log('\n--- Non-streaming completion ---');

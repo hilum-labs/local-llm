@@ -1,4 +1,4 @@
-import { LocalAI } from '../packages/local-llm/src/index.js';
+import { LocalLLM } from '../packages/local-llm/src/index.js';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,7 +21,7 @@ function check(label: string, ok: boolean) {
 async function main() {
   console.log('=== Phase 5: OpenAI-Compatible API Layer ===\n');
 
-  const ai = new LocalAI({
+  const ai = new LocalLLM({
     model: MODEL_PATH,
     gpuLayers: 99,
     contextSize: 2048,

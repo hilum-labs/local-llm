@@ -33,6 +33,7 @@ function createMockContext(options?: { generateResult?: string; streamTokens?: s
       }
     }),
     dispose: vi.fn(),
+    getPerf: vi.fn(() => null),
   };
 }
 

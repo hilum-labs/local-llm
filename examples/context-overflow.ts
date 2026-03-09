@@ -3,13 +3,13 @@
  * Demonstrates auto-detection, sliding window, and the onOverflow callback.
  * Run: npx tsx examples/context-overflow.ts
  */
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
 // ── Basic: defaults just work (sliding_window, 25% reserve) ─────────────────
 
 console.log('=== Default context management ===\n');
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
   contextSize: 2048,
 });
@@ -39,7 +39,7 @@ ai.dispose();
 
 console.log('\n=== Advanced config with onOverflow ===\n');
 
-const ai2 = await LocalAI.create({
+const ai2 = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
   contextSize: 2048,
   contextOverflow: {
@@ -74,7 +74,7 @@ ai2.dispose();
 
 console.log('\n=== Per-request strategy override ===\n');
 
-const ai3 = await LocalAI.create({
+const ai3 = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
   contextSize: 2048,
   contextOverflow: 'sliding_window',

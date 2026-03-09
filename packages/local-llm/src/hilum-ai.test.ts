@@ -6,6 +6,7 @@ const mockContext = {
   stream: vi.fn(async function* () { yield 'hello'; }),
   generateVision: vi.fn(async () => 'mock vision'),
   streamVision: vi.fn(async function* () { yield 'img'; }),
+  warmup: vi.fn(),
   dispose: vi.fn(),
 };
 
@@ -54,29 +55,29 @@ vi.mock('./model-manager.js', () => {
   return { ModelManager };
 });
 
-const { LocalAI } = await import('./hilum-ai.js');
+const { LocalLLM } = await import('./hilum-ai.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockModel.createContext.mockReturnValue(mockContext);
 });
 
-describe('LocalAI', () => {
+describe('LocalLLM', () => {
   describe('constructor', () => {
     it('stores options without side effects', () => {
-      const ai = new LocalAI({ model: '/path/model.gguf' });
+      const ai = new LocalLLM({ model: '/path/model.gguf' });
       expect(ai).toBeDefined();
     });
   });
 
   describe('chat getter', () => {
     it('throws before init', () => {
-      const ai = new LocalAI({ model: '/path/model.gguf' });
+      const ai = new LocalLLM({ model: '/path/model.gguf' });
       expect(() => ai.chat).toThrow('not initialized');
     });
 
     it('returns completions after init', async () => {
-      const ai = new LocalAI({ model: '/path/model.gguf' });
+      const ai = new LocalLLM({ model: '/path/model.gguf' });
       await ai.init();
       expect(ai.chat).toBeDefined();
       expect(ai.chat.completions).toBeDefined();
@@ -86,7 +87,7 @@ describe('LocalAI', () => {
 
   describe('init()', () => {
     it('loads a local model without downloading', async () => {
-      const ai = new LocalAI({ model: '/local/model.gguf' });
+      const ai = new LocalLLM({ model: '/local/model.gguf' });
       await ai.init();
 
       expect(mockDownloadModel).not.toHaveBeenCalled();
@@ -95,7 +96,7 @@ describe('LocalAI', () => {
     });
 
     it('downloads a remote model via ModelManager', async () => {
-      const ai = new LocalAI({ model: 'user/repo/model.gguf' });
+      const ai = new LocalLLM({ model: 'user/repo/model.gguf' });
       await ai.init();
 
       expect(mockDownloadModel).toHaveBeenCalledWith(
@@ -106,30 +107,27 @@ describe('LocalAI', () => {
     });
 
     it('is idempotent — second call is a no-op', async () => {
-      const ai = new LocalAI({ model: '/path/model.gguf' });
+      const ai = new LocalLLM({ model: '/path/model.gguf' });
       await ai.init();
       await ai.init();
 
-      // Context is created lazily on first chat access, not during init
-      void ai.chat;
+      // Context created once during init (warmup), not duplicated
       expect(mockModel.createContext).toHaveBeenCalledTimes(1);
       ai.dispose();
     });
 
     it('concurrent calls share the same init promise', async () => {
-      const ai = new LocalAI({ model: '/path/model.gguf' });
+      const ai = new LocalLLM({ model: '/path/model.gguf' });
       const [a, b] = await Promise.all([ai.init(), ai.init()]);
 
       expect(a).toBeUndefined();
       expect(b).toBeUndefined();
-      // Context is created lazily on first chat access
-      void ai.chat;
       expect(mockModel.createContext).toHaveBeenCalledTimes(1);
       ai.dispose();
     });
 
     it('passes context options to createContext', async () => {
-      const ai = new LocalAI({
+      const ai = new LocalLLM({
         model: '/path/model.gguf',
         contextSize: 4096,
         batchSize: 512,
@@ -137,8 +135,6 @@ describe('LocalAI', () => {
       });
       await ai.init();
 
-      // Trigger lazy context creation
-      void ai.chat;
       expect(mockModel.createContext).toHaveBeenCalledWith(
         expect.objectContaining({
           contextSize: 4096,
@@ -152,7 +148,7 @@ describe('LocalAI', () => {
 
   describe('create()', () => {
     it('returns an initialized instance', async () => {
-      const ai = await LocalAI.create({ model: '/path/model.gguf' });
+      const ai = await LocalLLM.create({ model: '/path/model.gguf' });
       expect(ai.chat).toBeDefined();
       ai.dispose();
     });
@@ -160,7 +156,7 @@ describe('LocalAI', () => {
 
   describe('dispose()', () => {
     it('disposes context and model', async () => {
-      const ai = await LocalAI.create({ model: '/path/model.gguf' });
+      const ai = await LocalLLM.create({ model: '/path/model.gguf' });
       // Trigger lazy context creation so there's something to dispose
       void ai.chat;
       ai.dispose();
@@ -170,14 +166,14 @@ describe('LocalAI', () => {
     });
 
     it('nulls out chat so getter throws after dispose', async () => {
-      const ai = await LocalAI.create({ model: '/path/model.gguf' });
+      const ai = await LocalLLM.create({ model: '/path/model.gguf' });
       ai.dispose();
 
       expect(() => ai.chat).toThrow('not initialized');
     });
 
     it('is safe to call multiple times', async () => {
-      const ai = await LocalAI.create({ model: '/path/model.gguf' });
+      const ai = await LocalLLM.create({ model: '/path/model.gguf' });
       ai.dispose();
       ai.dispose();
     });
@@ -185,19 +181,19 @@ describe('LocalAI', () => {
 
   describe('languageModel()', () => {
     it('throws before init', () => {
-      const ai = new LocalAI({ model: '/path/model.gguf' });
+      const ai = new LocalLLM({ model: '/path/model.gguf' });
       expect(() => ai.languageModel()).toThrow('not initialized');
     });
 
     it('returns a language model provider after init', async () => {
-      const ai = await LocalAI.create({ model: '/path/model.gguf' });
+      const ai = await LocalLLM.create({ model: '/path/model.gguf' });
       const lm = ai.languageModel();
       expect(lm).toBeDefined();
       ai.dispose();
     });
 
     it('uses custom model id when provided', async () => {
-      const ai = await LocalAI.create({ model: '/path/model.gguf' });
+      const ai = await LocalLLM.create({ model: '/path/model.gguf' });
       const lm = ai.languageModel('my-model');
       expect(lm).toBeDefined();
       ai.dispose();
@@ -206,25 +202,46 @@ describe('LocalAI', () => {
 
   describe('preload()', () => {
     it('returns local path without downloading', async () => {
-      const result = await LocalAI.preload('/local/model.gguf');
+      const result = await LocalLLM.preload('/local/model.gguf');
       expect(result).toBe('/local/model.gguf');
     });
 
     it('returns local path for relative paths', async () => {
-      const result = await LocalAI.preload('./model.gguf');
+      const result = await LocalLLM.preload('./model.gguf');
       expect(result).toBe('./model.gguf');
     });
 
     it('downloads remote model and returns cached path', async () => {
-      const result = await LocalAI.preload('user/repo/model.gguf');
+      const result = await LocalLLM.preload('user/repo/model.gguf');
       expect(result).toBe('/cached/model.gguf');
+    });
+  });
+
+  describe('speculative decoding', () => {
+    it('loads draft model and passes to createContext', async () => {
+      const ai = await LocalLLM.create({
+        model: '/path/model.gguf',
+        draftModel: '/path/draft.gguf',
+        draftNMax: 8,
+      });
+
+      expect(mockModel.createContext).toHaveBeenCalledWith(
+        expect.objectContaining({ draftNMax: 8 }),
+      );
+      ai.dispose();
+    });
+
+    it('works without draft model', async () => {
+      const ai = await LocalLLM.create({ model: '/path/model.gguf' });
+      expect(ai.chat).toBeDefined();
+      ai.dispose();
     });
   });
 
   describe('pool', () => {
     it('returns a ModelPool singleton', () => {
-      const pool1 = LocalAI.pool;
-      const pool2 = LocalAI.pool;
+      const pool1 = LocalLLM.pool;
+      const pool2 = LocalLLM.pool;
       expect(pool1).toBe(pool2);
     });
   });

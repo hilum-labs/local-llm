@@ -10,6 +10,7 @@ import type {
   ContextOverflowEvent,
   ContextMetadata,
   OverflowMessage,
+  InferenceMetrics,
 } from './types.js';
 import type {
   ChatCompletionRequest,
@@ -438,6 +439,7 @@ export class ChatCompletions {
       ? await this.context.generateVision(prompt, imageBuffers, genOpts)
       : await this.context.generate(prompt, genOpts);
     const completionTokens = this.model.tokenize(content).length;
+    const timing = this.context.getPerf() ?? undefined;
 
     contextMeta.promptTokens = promptTokens;
 
@@ -462,6 +464,7 @@ export class ChatCompletions {
           }],
           usage,
           _context: contextMeta,
+          _timing: timing,
         };
       }
     }
@@ -475,6 +478,7 @@ export class ChatCompletions {
       }],
       usage,
       _context: contextMeta,
+      _timing: timing,
     };
   }
 
@@ -507,11 +511,12 @@ export class ChatCompletions {
 
       const fullContent = tokens.join('');
       const toolCalls = parseToolCalls(fullContent, toolCtx.tools);
+      const toolTiming = this.context.getPerf() ?? undefined;
 
       if (toolCalls) {
-        yield* this.emitToolCallChunks(id, created, model, contextMeta, toolCalls);
+        yield* this.emitToolCallChunks(id, created, model, contextMeta, toolCalls, toolTiming);
       } else {
-        yield* this.emitTextChunks(id, created, model, contextMeta, tokens);
+        yield* this.emitTextChunks(id, created, model, contextMeta, tokens, toolTiming);
       }
       return;
     }
@@ -533,6 +538,7 @@ export class ChatCompletions {
     yield {
       id, object: 'chat.completion.chunk', created, model,
       choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      _timing: this.context.getPerf() ?? undefined,
     };
   }
 
@@ -546,6 +552,7 @@ export class ChatCompletions {
     model: string,
     contextMeta: ContextMetadata,
     toolCalls: ChatCompletionToolCall[],
+    timing?: InferenceMetrics,
   ): Generator<ChatCompletionChunk> {
     // First chunk: role + tool call IDs and function names
     yield {
@@ -587,6 +594,7 @@ export class ChatCompletions {
     yield {
       id, object: 'chat.completion.chunk', created, model,
       choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }],
+      _timing: timing,
     };
   }
 
@@ -597,6 +605,7 @@ export class ChatCompletions {
     model: string,
     contextMeta: ContextMetadata,
     tokens: string[],
+    timing?: InferenceMetrics,
   ): Generator<ChatCompletionChunk> {
     yield {
       id, object: 'chat.completion.chunk', created, model,
@@ -614,6 +623,7 @@ export class ChatCompletions {
     yield {
       id, object: 'chat.completion.chunk', created, model,
       choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      _timing: timing,
     };
   }
 }

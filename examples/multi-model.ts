@@ -4,15 +4,15 @@
  *
  * Note: Update the model paths below to point to your local GGUF files.
  */
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
 // Load two models into the shared pool
-const chat = await LocalAI.pool.load('chat', './models/chat-model.gguf');
-const code = await LocalAI.pool.load('code', './models/code-model.gguf');
+const chat = await LocalLLM.pool.load('chat', './models/chat-model.gguf');
+const code = await LocalLLM.pool.load('code', './models/code-model.gguf');
 
 // Check what's loaded
 console.log('Loaded models:');
-for (const info of LocalAI.pool.list()) {
+for (const info of LocalLLM.pool.list()) {
   console.log(`  ${info.alias}: ${(info.sizeBytes / 1e6).toFixed(1)} MB (refs: ${info.refCount})`);
 }
 
@@ -27,4 +27,4 @@ console.log('\nChat response:', response);
 
 // Clean up
 chatCtx.dispose();
-LocalAI.pool.dispose();
+LocalLLM.pool.dispose();

@@ -105,6 +105,8 @@ export interface ChatCompletionResponse {
   usage: ChatCompletionUsage;
   /** Context window management metadata (present when overflow management is active). */
   _context?: import('./types.js').ContextMetadata;
+  /** Inference performance metrics (prompt eval time, generation speed, etc.). */
+  _timing?: import('./types.js').InferenceMetrics;
 }
 
 // ── Streaming ────────────────────────────────────────────────────────────────
@@ -139,4 +141,6 @@ export interface ChatCompletionChunk {
   choices: ChatCompletionChunkChoice[];
   /** Context window management metadata (present on the first chunk when overflow management is active). */
   _context?: import('./types.js').ContextMetadata;
+  /** Inference performance metrics (present on the final chunk with finish_reason). */
+  _timing?: import('./types.js').InferenceMetrics;
 }

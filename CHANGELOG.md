@@ -16,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Model caching with configurable `cacheDir` and download progress callback
 - GPU auto-detection (Metal on macOS, CUDA on Linux/Windows)
 - Compute modes: `auto`, `gpu`, `cpu`, `hybrid`
-- Model pooling with LRU eviction and memory limits (`LocalAI.pool`)
-- Model preloading via `LocalAI.preload()` for fast startup
+- Model pooling with LRU eviction and memory limits (`LocalLLM.pool`)
+- Model preloading via `LocalLLM.preload()` for fast startup
 - Lower-level engine API: `Model`, `InferenceContext`, `ModelManager`
 - Platform support: macOS (Apple Silicon, Intel), Linux x64, Windows x64
 - TypeScript types and ESM build

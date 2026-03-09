@@ -1,4 +1,4 @@
-import { LocalAI } from '../packages/local-llm/src/index.js';
+import { LocalLLM } from '../packages/local-llm/src/index.js';
 
 let passed = 0;
 let failed = 0;
@@ -19,7 +19,7 @@ async function main() {
   // 1. Create with HuggingFace URL + auto-download
   console.log('--- Init with HuggingFace URL ---');
   let lastPct = -1;
-  const ai = new LocalAI({
+  const ai = new LocalLLM({
     model: 'https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
     compute: 'gpu',
     contextSize: 2048,
@@ -71,8 +71,8 @@ async function main() {
   check('Stream produced content', streamContent.length > 0);
 
   // 4. Static factory method
-  console.log('\n--- LocalAI.create() ---');
-  const ai2 = await LocalAI.create({
+  console.log('\n--- LocalLLM.create() ---');
+  const ai2 = await LocalLLM.create({
     model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
     compute: 'gpu',
   });
@@ -85,7 +85,7 @@ async function main() {
 
   // 5. Compute modes
   console.log('\n--- Compute: CPU mode ---');
-  const aiCpu = await LocalAI.create({
+  const aiCpu = await LocalLLM.create({
     model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
     compute: 'cpu',
   });
@@ -98,7 +98,7 @@ async function main() {
 
   // 6. Auto compute detection
   console.log('\n--- Compute: auto mode ---');
-  const aiAuto = await LocalAI.create({
+  const aiAuto = await LocalLLM.create({
     model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
   });
   const autoResult = await aiAuto.chat.completions.create({

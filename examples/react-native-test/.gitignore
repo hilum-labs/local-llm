@@ -1,9 +1,0 @@
-node_modules/
-ios/build/
-ios/Pods/
-android/build/
-android/.gradle/
-*.xcworkspace
-*.xcodeproj
-Podfile.lock
-.metro-health-check*

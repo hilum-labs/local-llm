@@ -1,15 +1,15 @@
 # API Reference
 
-## LocalAI
+## LocalLLM
 
 The main class that provides an OpenAI-compatible interface to local LLM inference.
 
-### `LocalAI.create(options)`
+### `LocalLLM.create(options)`
 
-Static async factory method. Creates and initializes a `LocalAI` instance.
+Static async factory method. Creates and initializes a `LocalLLM` instance.
 
 ```typescript
-const ai = await LocalAI.create(options);
+const ai = await LocalLLM.create(options);
 ```
 
 **Parameters:**
@@ -27,15 +27,18 @@ const ai = await LocalAI.create(options);
 | `cacheDir` | `string` | `~/.local-llm/models` | Directory for cached model downloads |
 | `onProgress` | `(percent: number) => void` | — | Download progress callback (0-100) |
 | `contextOverflow` | `ContextOverflowStrategy \| ContextOverflowConfig` | `'sliding_window'` | Context overflow strategy or full config object. Active by default — context size is auto-detected from the native context. |
+| `warmup` | `boolean` | `true` | Run a single-token warmup pass after model load to prime GPU shaders and CPU caches. Eliminates 500ms–2s cold-start on first inference. Set `false` to defer context creation to first use. |
+| `draftModel` | `string` | — | Path to a small draft model for speculative decoding. Must share the same tokenizer as the main model (e.g. same model family). When set, generation uses the draft to predict multiple tokens at once, then verifies in batch — typically 2-3x faster. |
+| `draftNMax` | `number` | `16` | Max draft tokens per speculative step. Higher values give more acceleration when the draft model is accurate. |
 
-**Returns:** `Promise<LocalAI>`
+**Returns:** `Promise<LocalLLM>`
 
-### `new LocalAI(options)`
+### `new LocalLLM(options)`
 
 Constructor. Creates an uninitialized instance. You must call `init()` before using it.
 
 ```typescript
-const ai = new LocalAI(options);
+const ai = new LocalLLM(options);
 await ai.init();
 ```
 
@@ -45,18 +48,18 @@ Initializes the instance: downloads the model (if URL), loads it into memory, an
 
 **Returns:** `Promise<void>`
 
-### `LocalAI.preload(model, options?)`
+### `LocalLLM.preload(model, options?)`
 
 Static method. Pre-downloads a model to the local cache **without** loading it into memory. Call this early (e.g. at app startup) so that `create()` later skips the download and only does the fast load-from-disk step.
 
 ```typescript
 // Start downloading at app startup — don't await, don't block
-LocalAI.preload('user/repo/model.gguf', {
+LocalLLM.preload('user/repo/model.gguf', {
   onProgress: (pct) => console.log(`${pct.toFixed(0)}%`),
 })
 
 // Later, when AI is needed — model is already cached, create() is fast
-const ai = await LocalAI.create({ model: 'user/repo/model.gguf' })
+const ai = await LocalLLM.create({ model: 'user/repo/model.gguf' })
 ```
 
 | Option | Type | Default | Description |
@@ -79,7 +82,7 @@ Frees all native resources (model and context). Safe to call multiple times.
 Also implements `Symbol.dispose` for use with `using`:
 
 ```typescript
-using ai = await LocalAI.create({ model: '...' });
+using ai = await LocalLLM.create({ model: '...' });
 // automatically disposed when leaving scope
 ```
 
@@ -211,18 +214,18 @@ Context overflow management is **active by default** — the actual context wind
 
 ```typescript
 // Simple — defaults are already active
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'user/repo/model.gguf',
 });
 
 // Explicit strategy
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'user/repo/model.gguf',
   contextOverflow: 'truncate_oldest',
 });
 
 // Full config with reserve ratio and overflow callback
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'user/repo/model.gguf',
   contextOverflow: {
     strategy: 'sliding_window',
@@ -343,6 +346,7 @@ interface ChatCompletionResponse {
     total_tokens: number;
   };
   _context?: ContextMetadata;    // Context window management details
+  _timing?: InferenceMetrics;    // Performance metrics (prompt eval, generation speed)
 }
 ```
 
@@ -376,13 +380,14 @@ interface ChatCompletionChunk {
     };
     finish_reason: 'stop' | 'length' | null;  // Last chunk only
   }];
+  _timing?: InferenceMetrics;  // Present on the final chunk
 }
 ```
 
 Chunk sequence:
 1. `{ delta: { role: 'assistant' }, finish_reason: null }` — first chunk
 2. `{ delta: { content: '...' }, finish_reason: null }` — content chunks (one per token)
-3. `{ delta: {}, finish_reason: 'stop' }` — final chunk
+3. `{ delta: {}, finish_reason: 'stop', _timing: {...} }` — final chunk (includes performance metrics)
 
 ---
 
@@ -393,13 +398,13 @@ Accessed via `ai.embeddings`. Provides the OpenAI-compatible embeddings endpoint
 ### Setup
 
 ```typescript
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: './model.gguf',
   embeddings: true,
 });
 
 // Or with custom pooling:
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: './model.gguf',
   embeddings: { poolingType: 'cls' },
 });
@@ -676,6 +681,48 @@ for await (const token of ctx.streamVision(prompt, [imageBuffer], { maxTokens: 2
 
 **Returns:** `AsyncGenerator<string>`
 
+### `ctx.getPerf()`
+
+Returns performance metrics from the most recent inference call. Returns `null` if the native backend doesn't support it.
+
+```typescript
+const text = await ctx.generate(prompt, { maxTokens: 128 });
+const perf = ctx.getPerf();
+
+console.log(`Prompt eval: ${perf.promptTokensPerSec.toFixed(0)} tok/s (${perf.promptEvalMs.toFixed(0)} ms)`);
+console.log(`Generation:  ${perf.generatedTokensPerSec.toFixed(0)} tok/s (${perf.generationMs.toFixed(0)} ms)`);
+console.log(`Tokens: ${perf.promptTokens} prompt, ${perf.generatedTokens} generated`);
+```
+
+**Returns:** `InferenceMetrics | null`
+
+### `ctx.benchmark(options?)`
+
+Runs a reproducible benchmark: evaluates a synthetic prompt then generates tokens, repeating for the requested number of iterations. Clears KV cache between runs.
+
+```typescript
+const result = await ctx.benchmark({
+  promptTokens: 256,
+  generateTokens: 128,
+  iterations: 5,
+});
+
+console.log(`Prompt eval: ${result.promptTokensPerSec.toFixed(0)} tok/s`);
+console.log(`Generation:  ${result.generatedTokensPerSec.toFixed(0)} tok/s`);
+console.log(`TTFT:        ${result.ttftMs.toFixed(0)} ms`);
+console.log(`Total:       ${result.totalMs.toFixed(0)} ms (${result.iterations} iterations)`);
+```
+
+**Parameters:**
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `promptTokens` | `number` | `128` | Number of prompt tokens to evaluate |
+| `generateTokens` | `number` | `64` | Number of tokens to generate per iteration |
+| `iterations` | `number` | `3` | Number of benchmark iterations |
+
+**Returns:** `Promise<BenchmarkResult>`
+
 ### `ctx.dispose()`
 
 Frees the context. Safe to call multiple times.
@@ -803,8 +850,13 @@ interface GenerateOptions {
   grammar?: string;
   grammarRoot?: string;
   responseFormat?: ResponseFormat;
+  onPromptProgress?: (processed: number, total: number) => boolean;
 }
 ```
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `onPromptProgress` | `(processed, total) => boolean` | — | Called between prompt evaluation chunks with the number of tokens processed and total. Return `false` to abort generation during prompt eval. Useful for progress bars or cancelling long prompts. |
 
 ### `ResponseFormat`
 
@@ -894,6 +946,48 @@ interface ContextMetadata {
 }
 ```
 
+### `InferenceMetrics`
+
+Performance metrics from a single inference call. Attached to responses as `_timing`:
+
+```typescript
+interface InferenceMetrics {
+  promptEvalMs: number;        // time to process prompt tokens (ms)
+  generationMs: number;        // time to generate completion tokens (ms)
+  promptTokens: number;        // number of prompt tokens processed
+  generatedTokens: number;     // number of tokens generated
+  promptTokensPerSec: number;  // prompt processing speed
+  generatedTokensPerSec: number; // token generation speed
+}
+```
+
+### `BenchmarkOptions`
+
+Options for `ctx.benchmark()`:
+
+```typescript
+interface BenchmarkOptions {
+  promptTokens?: number;   // default: 128
+  generateTokens?: number; // default: 64
+  iterations?: number;     // default: 3
+}
+```
+
+### `BenchmarkResult`
+
+Result from `ctx.benchmark()`:
+
+```typescript
+interface BenchmarkResult {
+  promptTokensPerSec: number;    // averaged across iterations
+  generatedTokensPerSec: number; // averaged across iterations
+  ttftMs: number;                // time-to-first-token averaged
+  totalMs: number;               // total wall time
+  iterations: number;
+  individual: InferenceMetrics[]; // per-iteration data
+}
+```
+
 ### `OverflowMessage`
 
 Simplified message type used by the overflow callback:
@@ -945,14 +1039,14 @@ interface ChatCompletionToolCall {
 
 ---
 
-## LocalAILanguageModel
+## LocalLLMProvider
 
 Vercel AI SDK provider backed by a local llama.cpp model. Implements the `LanguageModelV3` interface.
 
 ### Getting an instance
 
 ```typescript
-const ai = await LocalAI.create({ model: '...' });
+const ai = await LocalLLM.create({ model: '...' });
 const lm = ai.languageModel();       // default modelId
 const lm = ai.languageModel('my-id'); // custom modelId
 ```
@@ -1105,13 +1199,13 @@ interface PoolInfo {
 
 Disposes all loaded models and clears the pool. Safe to call multiple times.
 
-### `LocalAI.pool`
+### `LocalLLM.pool`
 
 Static accessor for a shared `ModelPool` instance:
 
 ```typescript
-const chat = await LocalAI.pool.load('chat', './chat.gguf');
-const code = await LocalAI.pool.load('code', './code.gguf');
+const chat = await LocalLLM.pool.load('chat', './chat.gguf');
+const code = await LocalLLM.pool.load('code', './code.gguf');
 // ...
-LocalAI.pool.dispose();
+LocalLLM.pool.dispose();
 ```

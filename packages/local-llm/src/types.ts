@@ -25,6 +25,12 @@ export interface ContextOptions {
   kvCacheTypeV?: KvCacheType;
   /** Maximum simultaneous sequences for batch inference. Default: 1. */
   maxSequences?: number;
+  /**
+   * Speculative decoding: max draft tokens per verification step.
+   * Only takes effect when a draft model is provided (via LocalLLMOptions.draftModel
+   * or Model.createContext with a draft model handle). Default: 16.
+   */
+  draftNMax?: number;
 }
 
 /** Pooling strategy for embedding models. */
@@ -70,6 +76,13 @@ export interface GenerateOptions {
   grammarRoot?: string;
   /** Structured output format — 'json_object' for free JSON, 'json_schema' for schema-constrained. */
   responseFormat?: ResponseFormat;
+  /**
+   * Called between prompt-eval chunks with progress (processed tokens, total tokens).
+   * Return `false` to abort generation during prompt evaluation.
+   * Only fires for synchronous (non-streaming) inference; streaming gets chunked
+   * eval at the C level automatically.
+   */
+  onPromptProgress?: (processed: number, total: number) => boolean;
 }
 
 export interface TextContentPart {
@@ -165,6 +178,40 @@ export interface QuantizeOptions {
   quantizeOutputTensor?: boolean;
   pure?: boolean;
   dryRun?: boolean;
+}
+
+/** Performance metrics from a single inference call. */
+export interface InferenceMetrics {
+  promptEvalMs: number;
+  generationMs: number;
+  promptTokens: number;
+  generatedTokens: number;
+  promptTokensPerSec: number;
+  generatedTokensPerSec: number;
+}
+
+export interface BenchmarkOptions {
+  /** Number of prompt tokens to evaluate (default: 128). */
+  promptTokens?: number;
+  /** Number of tokens to generate per iteration (default: 64). */
+  generateTokens?: number;
+  /** Number of benchmark iterations (default: 3). */
+  iterations?: number;
+}
+
+export interface BenchmarkResult {
+  /** Averaged prompt processing speed. */
+  promptTokensPerSec: number;
+  /** Averaged token generation speed. */
+  generatedTokensPerSec: number;
+  /** Time-to-first-token averaged across iterations. */
+  ttftMs: number;
+  /** Total wall time for all iterations. */
+  totalMs: number;
+  /** Number of iterations run. */
+  iterations: number;
+  /** Per-iteration metrics. */
+  individual: InferenceMetrics[];
 }
 
 export interface BatchResult {

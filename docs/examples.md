@@ -3,9 +3,9 @@
 ## Basic Chat
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -26,9 +26,9 @@ ai.dispose();
 Send images alongside text. Requires a vision model and projector:
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'Qwen/Qwen3-VL-8B-Instruct-GGUF/Qwen3VL-8B-Instruct-Q4_K_M.gguf',
   projector: 'Qwen/Qwen3-VL-8B-Instruct-GGUF/mmproj-Qwen3VL-8B-Instruct-F16.gguf',
 });
@@ -86,9 +86,9 @@ ai.dispose();
 ## Streaming Responses
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -110,9 +110,9 @@ ai.dispose();
 ## Download with Progress
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
   onProgress: (pct) => {
     process.stdout.write(`\rDownloading: ${pct.toFixed(1)}%`);
@@ -128,18 +128,18 @@ ai.dispose();
 Pre-download a model at app startup so it's cached when the user needs it. The app doesn't block — the download runs in the background.
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
 const MODEL = 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf';
 
 // Fire-and-forget at startup — download runs in the background
-LocalAI.preload(MODEL, {
+LocalLLM.preload(MODEL, {
   onProgress: (pct) => console.log(`Preloading: ${pct.toFixed(0)}%`),
 });
 
 // Later, when the user needs AI — model is already cached, this is fast
 async function handleUserRequest() {
-  const ai = await LocalAI.create({ model: MODEL });
+  const ai = await LocalLLM.create({ model: MODEL });
   const response = await ai.chat.completions.create({
     messages: [{ role: 'user', content: 'Hello!' }],
     max_tokens: 128,
@@ -152,10 +152,10 @@ async function handleUserRequest() {
 ## Using a Local Model File
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
 // Skip download — use a model you already have
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: './models/my-model.gguf',
   compute: 'gpu',
 });
@@ -171,28 +171,28 @@ ai.dispose();
 ## Compute Modes
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
 // Auto-detect GPU (default)
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: './model.gguf',
   compute: 'auto', // detects Metal on macOS, CUDA on Linux/Windows
 });
 
 // Force CPU only (slower, but works everywhere)
-const aiCpu = await LocalAI.create({
+const aiCpu = await LocalLLM.create({
   model: './model.gguf',
   compute: 'cpu',
 });
 
 // Force full GPU offload
-const aiGpu = await LocalAI.create({
+const aiGpu = await LocalLLM.create({
   model: './model.gguf',
   compute: 'gpu',
 });
 
 // Hybrid: split between CPU and GPU (limited VRAM)
-const aiHybrid = await LocalAI.create({
+const aiHybrid = await LocalLLM.create({
   model: './model.gguf',
   compute: 'hybrid',
 });
@@ -201,9 +201,9 @@ const aiHybrid = await LocalAI.create({
 ## Multi-turn Conversation
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -231,7 +231,7 @@ ai.dispose();
 Enable the model to call structured functions. The model generates a tool call with parsed arguments instead of plain text.
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 import type { ChatCompletionTool, ChatCompletionRequestMessage } from 'local-llm';
 
 const tools: ChatCompletionTool[] = [
@@ -252,7 +252,7 @@ const tools: ChatCompletionTool[] = [
   },
 ];
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -277,7 +277,7 @@ ai.dispose();
 Force the model to call a tool. Output is grammar-constrained to valid JSON matching the tool schema.
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 import type { ChatCompletionTool } from 'local-llm';
 
 const tools: ChatCompletionTool[] = [
@@ -295,7 +295,7 @@ const tools: ChatCompletionTool[] = [
   },
 ];
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -329,7 +329,7 @@ ai.dispose();
 Execute a tool and send the result back to the model for a natural language response.
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 import type { ChatCompletionTool, ChatCompletionRequestMessage } from 'local-llm';
 
 const tools: ChatCompletionTool[] = [
@@ -353,7 +353,7 @@ function getWeather(location: string) {
   return { temperature: 22, condition: 'sunny', location };
 }
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -387,7 +387,7 @@ ai.dispose();
 Tool calls can be streamed. The stream buffers internally and emits OpenAI-compatible `tool_calls` delta chunks.
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 import type { ChatCompletionTool } from 'local-llm';
 
 const tools: ChatCompletionTool[] = [
@@ -405,7 +405,7 @@ const tools: ChatCompletionTool[] = [
   },
 ];
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -440,9 +440,9 @@ ai.dispose();
 Context overflow is handled automatically. The default strategy is `sliding_window` with a 25% reserve ratio.
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
   contextSize: 2048,
 });
@@ -473,9 +473,9 @@ ai.dispose();
 Full control with `reserveRatio` and the `onOverflow` callback:
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
   contextSize: 2048,
   contextOverflow: {
@@ -508,9 +508,9 @@ ai.dispose();
 Override the strategy for a single request:
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
   contextSize: 2048,
 });
@@ -544,9 +544,9 @@ ai.dispose();
 Generate embeddings for text. Useful for semantic search, RAG, clustering, and similarity comparison.
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
   embeddings: true,
 });
@@ -578,9 +578,9 @@ ai.dispose();
 Use embeddings for semantic similarity. Since vectors are L2-normalized, dot product equals cosine similarity.
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
   embeddings: true,
 });
@@ -611,9 +611,9 @@ ai.dispose();
 A minimal retrieval-augmented generation (RAG) example:
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
   embeddings: true,
 });
@@ -668,9 +668,9 @@ ai.dispose();
 Choose a pooling strategy for your embedding model:
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: './embedding-model.gguf',
   embeddings: { poolingType: 'cls' }, // 'mean' (default), 'cls', or 'last'
 });
@@ -714,9 +714,9 @@ model.dispose();
 Force the model to output valid JSON matching a specific schema:
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -752,9 +752,9 @@ ai.dispose();
 Request any valid JSON without a specific schema:
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -775,9 +775,9 @@ ai.dispose();
 Use a raw GBNF grammar for full control over output format:
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -876,9 +876,9 @@ model.dispose();
 
 ```typescript
 import { generateText } from 'ai';
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -897,9 +897,9 @@ ai.dispose();
 
 ```typescript
 import { streamText } from 'ai';
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 
@@ -919,10 +919,10 @@ ai.dispose();
 ## Multi-Model Pool
 
 ```typescript
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const chat = await LocalAI.pool.load('chat', './chat-model.gguf');
-const code = await LocalAI.pool.load('code', './code-model.gguf');
+const chat = await LocalLLM.pool.load('chat', './chat-model.gguf');
+const code = await LocalLLM.pool.load('code', './code-model.gguf');
 
 // Use models as needed — pool manages memory and eviction
 const ctx = chat.createContext();
@@ -930,7 +930,218 @@ const response = await ctx.generate('Hello!', { maxTokens: 64 });
 console.log(response);
 
 ctx.dispose();
-LocalAI.pool.dispose();
+LocalLLM.pool.dispose();
+```
+
+## Performance Metrics
+
+Every response includes `_timing` with inference speed data:
+
+```typescript
+import { LocalLLM } from 'local-llm';
+
+const ai = await LocalLLM.create({
+  model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
+});
+
+const response = await ai.chat.completions.create({
+  messages: [{ role: 'user', content: 'Explain quantum computing in one paragraph.' }],
+  max_tokens: 256,
+});
+
+console.log(response.choices[0].message.content);
+console.log(`\nPrompt eval: ${response._timing?.promptTokensPerSec.toFixed(0)} tok/s`);
+console.log(`Generation:  ${response._timing?.generatedTokensPerSec.toFixed(0)} tok/s`);
+console.log(`TTFT:        ${response._timing?.promptEvalMs.toFixed(0)} ms`);
+
+ai.dispose();
+```
+
+## Streaming with Performance Metrics
+
+When streaming, `_timing` is attached to the final chunk:
+
+```typescript
+import { LocalLLM } from 'local-llm';
+
+const ai = await LocalLLM.create({
+  model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
+});
+
+const stream = await ai.chat.completions.create({
+  messages: [{ role: 'user', content: 'Write a haiku about code.' }],
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  const content = chunk.choices[0]?.delta?.content;
+  if (content) process.stdout.write(content);
+  if (chunk._timing) {
+    console.log(`\n\nGeneration: ${chunk._timing.generatedTokensPerSec.toFixed(1)} tok/s`);
+  }
+}
+
+ai.dispose();
+```
+
+## Low-Level: Performance Metrics
+
+Use `getPerf()` on an `InferenceContext` after any inference call:
+
+```typescript
+import { Model } from 'local-llm';
+
+const model = new Model('./model.gguf', { compute: 'gpu' });
+const ctx = model.createContext({ contextSize: 4096 });
+
+const prompt = model.applyChatTemplate([
+  { role: 'user', content: 'What is the speed of light?' },
+], true);
+
+const text = await ctx.generate(prompt, { maxTokens: 128 });
+const perf = ctx.getPerf();
+
+console.log(text);
+console.log(`\nPrompt: ${perf.promptTokens} tokens in ${perf.promptEvalMs.toFixed(0)} ms (${perf.promptTokensPerSec.toFixed(0)} tok/s)`);
+console.log(`Generated: ${perf.generatedTokens} tokens in ${perf.generationMs.toFixed(0)} ms (${perf.generatedTokensPerSec.toFixed(0)} tok/s)`);
+
+ctx.dispose();
+model.dispose();
+```
+
+## Benchmark
+
+Run a reproducible benchmark to measure inference speed:
+
+```typescript
+import { Model } from 'local-llm';
+
+const model = new Model('./model.gguf', { compute: 'gpu' });
+const ctx = model.createContext({ contextSize: 4096 });
+
+const result = await ctx.benchmark({
+  promptTokens: 256,
+  generateTokens: 128,
+  iterations: 5,
+});
+
+console.log(`Prompt eval: ${result.promptTokensPerSec.toFixed(0)} tok/s`);
+console.log(`Generation:  ${result.generatedTokensPerSec.toFixed(0)} tok/s`);
+console.log(`TTFT:        ${result.ttftMs.toFixed(0)} ms`);
+console.log(`Total:       ${result.totalMs.toFixed(0)} ms (${result.iterations} iterations)`);
+
+ctx.dispose();
+model.dispose();
+```
+
+## Warmup Control
+
+By default, `LocalLLM.create()` runs a single-token warmup pass after loading the model. This primes GPU shaders and CPU caches, eliminating a 500ms–2s cold-start penalty on the first real inference.
+
+```typescript
+import { LocalLLM } from 'local-llm';
+
+// Default: warmup runs automatically (recommended)
+const ai = await LocalLLM.create({
+  model: './model.gguf',
+});
+
+// First inference is fast — no cold-start penalty
+const response = await ai.chat.completions.create({
+  messages: [{ role: 'user', content: 'Hello!' }],
+});
+```
+
+To skip warmup (e.g. if loading many models and only using them later):
+
+```typescript
+const ai = await LocalLLM.create({
+  model: './model.gguf',
+  warmup: false,  // Defer context creation to first use
+});
+```
+
+## Prompt Progress and Cancellation
+
+For long prompts, you can track prompt evaluation progress and cancel mid-evaluation:
+
+```typescript
+import { Model } from 'local-llm';
+
+const model = new Model('./model.gguf');
+const ctx = model.createContext();
+
+const prompt = model.applyChatTemplate([
+  { role: 'user', content: veryLongDocument },
+], true);
+
+const text = await ctx.generate(prompt, {
+  maxTokens: 256,
+  onPromptProgress: (processed, total) => {
+    const pct = ((processed / total) * 100).toFixed(0);
+    console.log(`Evaluating prompt: ${pct}% (${processed}/${total} tokens)`);
+    return true; // Return false to abort
+  },
+});
+```
+
+Cancel generation during prompt evaluation:
+
+```typescript
+const text = await ctx.generate(prompt, {
+  maxTokens: 256,
+  onPromptProgress: (processed, total) => {
+    if (shouldCancel) return false; // Abort — throws cancellation error
+    return true;
+  },
+});
+```
+
+## Speculative Decoding
+
+Use a small draft model to predict tokens ahead, then verify in batch against the main model. Typically 2-3x faster generation with no quality loss — the output is identical to what the main model would produce.
+
+```typescript
+import { LocalLLM } from 'local-llm';
+
+const ai = await LocalLLM.create({
+  model: 'meta-llama/Llama-3.2-3B-Instruct-GGUF/Llama-3.2-3B-Instruct-Q4_K_M.gguf',
+  draftModel: 'meta-llama/Llama-3.2-1B-Instruct-GGUF/Llama-3.2-1B-Instruct-Q4_K_M.gguf',
+});
+
+const response = await ai.chat.completions.create({
+  messages: [{ role: 'user', content: 'Explain quantum computing in simple terms.' }],
+  max_tokens: 512,
+});
+
+console.log(response.choices[0].message.content);
+console.log(`Speed: ${response._timing?.generatedTokensPerSec.toFixed(0)} tok/s`);
+
+ai.dispose();
+```
+
+Speculative decoding works with streaming too — tokens are emitted in bursts as each batch is verified:
+
+```typescript
+const stream = await ai.chat.completions.create({
+  messages: [{ role: 'user', content: 'Write a poem about the sea.' }],
+  max_tokens: 256,
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content ?? '');
+}
+```
+
+Tune `draftNMax` to control the draft length per step (default: 16):
+
+```typescript
+const ai = await LocalLLM.create({
+  model: './main-model.gguf',
+  draftModel: './draft-model.gguf',
+  draftNMax: 8,  // Fewer draft tokens — less wasted compute when draft is inaccurate
+});
 ```
 
 ## Model Management

@@ -23,8 +23,12 @@ if(NOT DEFINED GGML_NATIVE)
   set(GGML_NATIVE ON CACHE BOOL "Optimize for host CPU" FORCE)
 endif()
 
-# Build hilum-local-llm-engine (llama + ggml + common for grammar support)
-set(LLAMA_BUILD_COMMON ON CACHE BOOL "Build common library for grammar support" FORCE)
+# Build hilum-local-llm-engine (llama + ggml)
+set(LLAMA_BUILD_COMMON OFF CACHE BOOL "Not needed — libhilum replaces common" FORCE)
+
+# Enable libhilum
+set(HILUM_BUILD_LIB ON CACHE BOOL "Build libhilum shared C API" FORCE)
+
 add_subdirectory(
   ${VENDOR_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}/hilum-local-llm-engine
@@ -50,26 +54,11 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
   SUFFIX ".node"
 )
 
-# Build mtmd (multimodal support)
-# LLAMA_INSTALL_VERSION is set inside the vendor's add_subdirectory scope,
-# but mtmd needs it for its target properties. Provide a fallback.
-if(NOT DEFINED LLAMA_INSTALL_VERSION)
-  set(LLAMA_INSTALL_VERSION "0.0.0")
-endif()
-add_subdirectory(
-  ${VENDOR_DIR}/tools/mtmd
-  ${CMAKE_CURRENT_BINARY_DIR}/mtmd
-  EXCLUDE_FROM_ALL
-)
-
 target_include_directories(${PROJECT_NAME} PRIVATE
   ${CMAKE_JS_INC}
   ${NODE_ADDON_API_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/hilum-local-llm-engine/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/hilum-local-llm-engine/ggml/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/hilum-local-llm-engine/common
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/hilum-local-llm-engine/vendor
-  ${VENDOR_DIR}/tools/mtmd
+  ${VENDOR_DIR}/hilum
+  ${VENDOR_DIR}/vendor
 )
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
@@ -79,9 +68,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
   ${CMAKE_JS_LIB}
-  llama
-  common
-  mtmd
+  hilum
 )
 
 # On Apple, ensure Metal frameworks are linked

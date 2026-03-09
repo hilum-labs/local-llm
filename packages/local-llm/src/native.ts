@@ -26,6 +26,8 @@ export interface NativeAddon {
       type_k?: number;
       type_v?: number;
       n_seq_max?: number;
+      draft_model?: NativeModel;
+      draft_n_max?: number;
     },
   ): NativeContext;
 
@@ -95,7 +97,22 @@ export interface NativeAddon {
   /** Returns the actual context window size (in tokens) for this context. */
   getContextSize(ctx: NativeContext): number;
 
+  /** Run a single-token warmup pass to prime GPU/CPU caches. */
+  warmup(model: NativeModel, ctx: NativeContext): void;
+
   kvCacheClear(ctx: NativeContext, fromPos: number): void;
+
+  /** Returns true if the OS is in low-power / battery-saver mode. */
+  isLowPowerMode?(): boolean;
+
+  getPerf(ctx: NativeContext): {
+    promptEvalMs: number;
+    generationMs: number;
+    promptTokens: number;
+    generatedTokens: number;
+    promptTokensPerSec: number;
+    generatedTokensPerSec: number;
+  } | null;
 
   createMtmdContext(
     model: NativeModel,
@@ -202,6 +219,22 @@ export interface NativeAddon {
     callback: ((level: number, text: string) => void) | null,
   ): void;
   setLogLevel(level: number): void;
+
+  /** Returns the C-engine-computed optimal thread count for this machine. */
+  optimalThreadCount(): number;
+
+  /** Run a benchmark entirely in the C engine. Returns averaged metrics. */
+  benchmark(
+    model: NativeModel,
+    ctx: NativeContext,
+    options?: { promptTokens?: number; generateTokens?: number; iterations?: number },
+  ): {
+    promptTokensPerSec: number;
+    generatedTokensPerSec: number;
+    ttftMs: number;
+    totalMs: number;
+    iterations: number;
+  };
 }
 
 let cached: NativeAddon | null = null;

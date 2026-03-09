@@ -2,9 +2,9 @@
  * Basic chat completion example.
  * Run: npx tsx examples/basic-chat.ts
  */
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf',
 });
 

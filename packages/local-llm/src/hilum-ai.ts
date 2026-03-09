@@ -2,13 +2,13 @@ import { Model } from './engine.js';
 import type { InferenceContext, EmbeddingContext } from './engine.js';
 import { ChatCompletions } from './openai-compat.js';
 import { Embeddings } from './embeddings.js';
-import { LocalAILanguageModel } from './ai-sdk-provider.js';
+import { LocalLLMProvider } from './ai-sdk-provider.js';
 import { ModelManager } from './model-manager.js';
 import { ModelPool } from './model-pool.js';
 import { loadNativeAddon } from './native.js';
-import type { ComputeMode, LogLevel, LogCallback, ContextOverflowStrategy, ContextOverflowConfig, EmbeddingPoolingType, FlashAttentionMode, KvCacheType } from './types.js';
+import type { ComputeMode, LogLevel, LogCallback, ContextOverflowStrategy, ContextOverflowConfig, EmbeddingPoolingType, FlashAttentionMode, KvCacheType, BenchmarkOptions, BenchmarkResult } from './types.js';
 
-export interface LocalAIOptions {
+export interface LocalLLMOptions {
   /** HuggingFace URL, shorthand ("user/repo/file.gguf"), or local file path. */
   model: string;
   /** Path to mmproj GGUF file (required for vision models). URL, shorthand, or local path. */
@@ -48,11 +48,32 @@ export interface LocalAIOptions {
    * Default pooling: 'mean'.
    */
   embeddings?: boolean | { poolingType?: EmbeddingPoolingType };
+  /**
+   * Run a single-token warmup pass after model load to prime GPU shaders and CPU caches.
+   * Eliminates a 500ms–2s cold-start penalty on the first real inference.
+   * Default: true.
+   */
+  warmup?: boolean;
+  /**
+   * Path to a small "draft" model for speculative decoding.
+   * Must share the same tokenizer/vocabulary as the main model (e.g. same model family).
+   * When set, generation uses the draft model to predict multiple tokens at once,
+   * then verifies them against the main model in a single batch — typically 2-3x faster.
+   * Example: main model = Llama 3.2 3B, draft model = Llama 3.2 1B.
+   */
+  draftModel?: string;
+  /**
+   * Max draft tokens per speculative step. Default: 16.
+   * Higher values give more acceleration when the draft model is accurate,
+   * but waste compute when it's not.
+   */
+  draftNMax?: number;
 }
 
-export class LocalAI {
-  private options: LocalAIOptions;
+export class LocalLLM {
+  private options: LocalLLMOptions;
   private _model: Model | null = null;
+  private _draftModel: Model | null = null;
   private _context: InferenceContext | null = null;
   private _embeddingContext: EmbeddingContext | null = null;
   private _chat: { completions: ChatCompletions } | null = null;
@@ -64,10 +85,10 @@ export class LocalAI {
 
   /** Shared model pool for in-process multimodel support. */
   static get pool(): ModelPool {
-    if (!LocalAI._pool) {
-      LocalAI._pool = new ModelPool();
+    if (!LocalLLM._pool) {
+      LocalLLM._pool = new ModelPool();
     }
-    return LocalAI._pool;
+    return LocalLLM._pool;
   }
 
   /** OpenAI-compatible chat completions interface. Lazily creates context on first use. */
@@ -77,25 +98,25 @@ export class LocalAI {
       this.ensureContext();
       return this._chat!;
     }
-    throw new Error('LocalAI not initialized. Call await init() first, or use await LocalAI.create().');
+    throw new Error('LocalLLM not initialized. Call await init() first, or use await LocalLLM.create().');
   }
 
   /** OpenAI-compatible embeddings interface. Requires `embeddings: true` in options. */
   get embeddings(): Embeddings {
     if (this._embeddings) return this._embeddings;
     if (this._model && !this._embeddingContext) {
-      throw new Error('Embeddings not enabled. Pass `embeddings: true` to LocalAI.create().');
+      throw new Error('Embeddings not enabled. Pass `embeddings: true` to LocalLLM.create().');
     }
-    throw new Error('LocalAI not initialized. Call await init() first, or use await LocalAI.create().');
+    throw new Error('LocalLLM not initialized. Call await init() first, or use await LocalLLM.create().');
   }
 
-  constructor(options: LocalAIOptions) {
+  constructor(options: LocalLLMOptions) {
     this.options = options;
   }
 
-  /** Create and initialize a LocalAI instance in one step. */
-  static async create(options: LocalAIOptions): Promise<LocalAI> {
-    const instance = new LocalAI(options);
+  /** Create and initialize a LocalLLM instance in one step. */
+  static async create(options: LocalLLMOptions): Promise<LocalLLM> {
+    const instance = new LocalLLM(options);
     await instance.init();
     return instance;
   }
@@ -166,9 +187,9 @@ export class LocalAI {
   static setLogCallback(callback: LogCallback | null, minLevel: LogLevel = 'info'): void {
     const addon = loadNativeAddon();
     if (callback) {
-      addon.setLogLevel(LocalAI.LOG_LEVEL_MAP[minLevel]);
+      addon.setLogLevel(LocalLLM.LOG_LEVEL_MAP[minLevel]);
       addon.setLogCallback((level: number, text: string) => {
-        callback(LocalAI.LOG_LEVEL_REVERSE[level] ?? 'info', text);
+        callback(LocalLLM.LOG_LEVEL_REVERSE[level] ?? 'info', text);
       });
     } else {
       addon.setLogCallback(null);
@@ -178,7 +199,7 @@ export class LocalAI {
   private async _doInit(): Promise<void> {
     // Wire up log callback if provided
     if (this.options.onLog) {
-      LocalAI.setLogCallback(this.options.onLog, this.options.logLevel ?? 'info');
+      LocalLLM.setLogCallback(this.options.onLog, this.options.logLevel ?? 'info');
     }
 
     const modelPath = await this.resolveModelPath();
@@ -197,10 +218,24 @@ export class LocalAI {
       });
     }
 
+    // Load draft model for speculative decoding (if specified)
+    if (this.options.draftModel) {
+      const draftPath = await this.resolveFilePath(this.options.draftModel);
+      this._draftModel = await Model.load(draftPath, {
+        compute: this.options.compute,
+        gpuLayers: this.options.gpuLayers,
+        useMmap: this.options.useMmap,
+      });
+    }
+
     this._modelName = modelPath.split('/').pop()?.replace('.gguf', '') ?? 'local';
 
-    // Context and ChatCompletions are created lazily on first chat access
-    // to save ~50-200MB when the model is loaded but not immediately used.
+    // Eagerly create context + warmup to eliminate cold-start latency.
+    // Opt out with `warmup: false` to defer context creation to first use.
+    if (this.options.warmup !== false) {
+      this.ensureContext();
+      this._context!.warmup();
+    }
 
     if (this.options.embeddings) {
       const embOpts = typeof this.options.embeddings === 'object' ? this.options.embeddings : {};
@@ -217,7 +252,7 @@ export class LocalAI {
   /** Lazily create inference context and ChatCompletions on first use. */
   private ensureContext(): void {
     if (this._context) return;
-    if (!this._model) throw new Error('LocalAI not initialized.');
+    if (!this._model) throw new Error('LocalLLM not initialized.');
 
     this._context = this._model.createContext({
       contextSize: this.options.contextSize,
@@ -226,6 +261,8 @@ export class LocalAI {
       flashAttention: this.options.flashAttention,
       kvCacheTypeK: this.options.kvCacheTypeK,
       kvCacheTypeV: this.options.kvCacheTypeV,
+      draftModel: this._draftModel?.nativeHandle,
+      draftNMax: this.options.draftNMax,
     });
 
     this._chat = {
@@ -256,9 +293,9 @@ export class LocalAI {
 
   /** Switch to a model already loaded in the shared pool. */
   async switchModel(alias: string): Promise<void> {
-    const model = LocalAI.pool.get(alias);
+    const model = LocalLLM.pool.get(alias);
     if (!model) {
-      throw new Error(`Model "${alias}" not found in pool. Load it first with LocalAI.pool.load().`);
+      throw new Error(`Model "${alias}" not found in pool. Load it first with LocalLLM.pool.load().`);
     }
 
     // Dispose old context but not the old model (pool manages model lifecycle)
@@ -283,22 +320,36 @@ export class LocalAI {
   }
 
   /** Return a Vercel AI SDK LanguageModelV3 provider backed by this instance. */
-  languageModel(id?: string): LocalAILanguageModel {
+  languageModel(id?: string): LocalLLMProvider {
     if (!this._model) {
-      throw new Error('LocalAI not initialized. Call await init() first, or use await LocalAI.create().');
+      throw new Error('LocalLLM not initialized. Call await init() first, or use await LocalLLM.create().');
     }
     this.ensureContext();
     const modelId = id ?? this._modelName ?? 'local';
-    return new LocalAILanguageModel(this._model, this._context!, modelId);
+    return new LocalLLMProvider(this._model, this._context!, modelId);
+  }
+
+  /**
+   * Run a benchmark: evaluate a synthetic prompt then generate tokens,
+   * repeating for the requested number of iterations. Returns averaged metrics.
+   */
+  async benchmark(options?: BenchmarkOptions): Promise<BenchmarkResult> {
+    if (!this._model) {
+      throw new Error('LocalLLM not initialized. Call await init() first, or use await LocalLLM.create().');
+    }
+    this.ensureContext();
+    return this._context!.benchmark(options);
   }
 
   dispose(): void {
     this._embeddingContext?.dispose();
     this._context?.dispose();
+    this._draftModel?.dispose();
     this._model?.dispose();
     this._embeddingContext = null;
     this._embeddings = null;
     this._context = null;
+    this._draftModel = null;
     this._model = null;
     this._chat = null;
   }

@@ -3,7 +3,7 @@
  * The model decides which tool to call and generates structured arguments.
  * Run: npx tsx examples/tool-calling.ts
  */
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 import type { ChatCompletionTool, ChatCompletionRequestMessage } from 'local-llm';
 
 const MODEL = 'TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf';
@@ -49,7 +49,7 @@ function searchWeb(args: { query: string }) {
   return { results: [`Top result for "${args.query}": Example page content...`] };
 }
 
-const ai = await LocalAI.create({ model: MODEL });
+const ai = await LocalLLM.create({ model: MODEL });
 
 // ── Auto mode: model decides whether to call a tool ─────────────────────────
 

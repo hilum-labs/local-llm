@@ -3,10 +3,10 @@
  * Requires a vision model + projector (e.g. Qwen3-VL).
  * Run: npx tsx examples/vision.ts
  */
-import { LocalAI } from 'local-llm';
+import { LocalLLM } from 'local-llm';
 import { readFileSync } from 'node:fs';
 
-const ai = await LocalAI.create({
+const ai = await LocalLLM.create({
   model: 'Qwen/Qwen3-VL-8B-Instruct-GGUF/Qwen3VL-8B-Instruct-Q4_K_M.gguf',
   projector: 'Qwen/Qwen3-VL-8B-Instruct-GGUF/mmproj-Qwen3VL-8B-Instruct-F16.gguf',
 });

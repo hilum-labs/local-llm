@@ -36,13 +36,21 @@ const mockNative = {
   supportVision: vi.fn(() => true),
   setLogCallback: vi.fn(),
   setLogLevel: vi.fn(),
+  optimalThreadCount: vi.fn(() => 4),
+  benchmark: vi.fn(() => ({
+    promptTokensPerSec: 100,
+    generatedTokensPerSec: 50,
+    ttftMs: 200,
+    totalMs: 3000,
+    iterations: 3,
+  })),
 };
 
 vi.mock('./native.js', () => ({
   loadNativeAddon: () => mockNative,
 }));
 
-const { Model, InferenceContext } = await import('./engine.js');
+const { Model, InferenceContext, optimalThreadCount } = await import('./engine.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -116,6 +124,43 @@ describe('Model', () => {
         throw new Error('file not found');
       });
       expect(() => model.loadProjector('/bad/proj.gguf')).toThrow('Projector file not found');
+    });
+  });
+
+  describe('nativeHandle', () => {
+    it('returns the underlying native model handle', () => {
+      const handle = { __brand: 'NativeModel' };
+      mockNative.loadModel.mockReturnValue(handle);
+      const model = new Model('/model.gguf');
+      expect(model.nativeHandle).toBe(handle);
+    });
+
+    it('throws if model is disposed', () => {
+      const model = new Model('/model.gguf');
+      model.dispose();
+      expect(() => model.nativeHandle).toThrow('disposed');
+    });
+  });
+
+  describe('speculative decoding', () => {
+    it('passes draft model handle to createContext', () => {
+      const model = new Model('/model.gguf');
+      const draftModel = new Model('/draft.gguf');
+      model.createContext({ draftModel: draftModel.nativeHandle, draftNMax: 8 });
+      expect(mockNative.createContext).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          draft_model: draftModel.nativeHandle,
+          draft_n_max: 8,
+        }),
+      );
+    });
+
+    it('creates context without draft model when not specified', () => {
+      const model = new Model('/model.gguf');
+      model.createContext();
+      const callArgs = mockNative.createContext.mock.calls[0][1] ?? {};
+      expect(callArgs.draft_model).toBeUndefined();
     });
   });
 });
@@ -617,11 +662,96 @@ describe('InferenceContext', () => {
     });
   });
 
+  describe('onPromptProgress', () => {
+    it('passes onPromptProgress through to native options', async () => {
+      const ctx = createContext();
+      const progressFn = vi.fn(() => true);
+      await ctx.generate('prompt', { onPromptProgress: progressFn });
+
+      const passedOpts = mockNative.inferStream.mock.calls[0][3];
+      expect(passedOpts.onPromptProgress).toBe(progressFn);
+    });
+
+    it('does not include onPromptProgress when not provided', async () => {
+      const ctx = createContext();
+      await ctx.generate('prompt', { maxTokens: 100 });
+
+      const passedOpts = mockNative.inferStream.mock.calls[0][3];
+      expect(passedOpts).not.toHaveProperty('onPromptProgress');
+    });
+
+    it('passes onPromptProgress through stream options', async () => {
+      const ctx = createContext();
+      const progressFn = vi.fn(() => true);
+      const tokens: string[] = [];
+      for await (const t of ctx.stream('prompt', { onPromptProgress: progressFn })) {
+        tokens.push(t);
+      }
+
+      const passedOpts = mockNative.inferStream.mock.calls[0][3];
+      expect(passedOpts.onPromptProgress).toBe(progressFn);
+    });
+
+    it('progress callback returning false causes cancellation error in inferSync path', async () => {
+      // Simulate the native addon rejecting with a cancellation error
+      // when the progress callback returns false
+      mockNative.inferStream.mockImplementation((_m: any, _c: any, _p: string, _o: any, cb: Function) => {
+        cb(new Error('inferSync: cancelled'), null);
+      });
+
+      const ctx = createContext();
+      const progressFn = vi.fn(() => false);
+      await expect(
+        ctx.generate('prompt', { onPromptProgress: progressFn }),
+      ).rejects.toThrow('cancelled');
+    });
+  });
+
+  describe('benchmark', () => {
+    it('delegates to native benchmark function', () => {
+      const ctx = createContext();
+      const result = ctx.benchmark({ promptTokens: 64, generateTokens: 32, iterations: 2 });
+
+      expect(mockNative.benchmark).toHaveBeenCalledWith(
+        expect.anything(), expect.anything(),
+        { promptTokens: 64, generateTokens: 32, iterations: 2 },
+      );
+      expect(result.promptTokensPerSec).toBe(100);
+      expect(result.generatedTokensPerSec).toBe(50);
+      expect(result.ttftMs).toBe(200);
+      expect(result.iterations).toBe(3);
+      expect(result.individual).toEqual([]);
+    });
+
+    it('uses default options when none provided', () => {
+      const ctx = createContext();
+      ctx.benchmark();
+
+      expect(mockNative.benchmark).toHaveBeenCalledWith(
+        expect.anything(), expect.anything(),
+        { promptTokens: undefined, generateTokens: undefined, iterations: undefined },
+      );
+    });
+  });
+
   describe('dispose', () => {
     it('prevents further generation', async () => {
       const ctx = createContext();
       ctx.dispose();
       await expect(ctx.generate('prompt')).rejects.toThrow('Context has been disposed');
     });
+  });
+});
+
+describe('optimalThreadCount', () => {
+  it('delegates to native optimalThreadCount', () => {
+    const count = optimalThreadCount();
+    expect(mockNative.optimalThreadCount).toHaveBeenCalled();
+    expect(count).toBe(4);
+  });
+
+  it('returns custom value from native', () => {
+    mockNative.optimalThreadCount.mockReturnValueOnce(8);
+    expect(optimalThreadCount()).toBe(8);
   });
 });
