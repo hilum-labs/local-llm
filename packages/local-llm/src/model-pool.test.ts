@@ -1,33 +1,55 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { setNativeAddon, type NativeAddon, type NativeModel } from 'local-llm-js-core';
 import { ModelPool } from './model-pool.js';
 
-// Mock Model to avoid native addon dependency
-vi.mock('./engine.js', () => {
-  let modelCounter = 0;
+function createHandle(sizeBytes: number): NativeModel & { sizeBytes: number } {
+  return { __brand: 'NativeModel', sizeBytes } as NativeModel & { sizeBytes: number };
+}
 
-  class MockModel {
-    sizeBytes: number;
-    disposed = false;
-    id: number;
+const mockNative: NativeAddon = {
+  backendInfo: vi.fn(() => 'Test'),
+  backendVersion: vi.fn(() => '1.0.0'),
+  apiVersion: vi.fn(() => 1 << 16),
+  loadModel: vi.fn((path: string) => {
+    const match = path.match(/model-(\d+)/);
+    return createHandle(match ? Number(match[1]) : 1000);
+  }),
+  loadModelFromBuffer: vi.fn((buffer: Uint8Array) => createHandle(buffer.byteLength || 1000)),
+  createContext: vi.fn(),
+  tokenize: vi.fn(() => new Int32Array()),
+  detokenize: vi.fn(() => ''),
+  applyChatTemplate: vi.fn(() => ''),
+  inferSync: vi.fn(() => ''),
+  inferStream: vi.fn(),
+  getModelSize: vi.fn((model: NativeModel) => (model as NativeModel & { sizeBytes: number }).sizeBytes),
+  freeModel: vi.fn(),
+  freeContext: vi.fn(),
+  getContextSize: vi.fn(() => 0),
+  warmup: vi.fn(),
+  kvCacheClear: vi.fn(),
+  stopStream: vi.fn(),
+  getPerf: vi.fn(() => null),
+  createMtmdContext: vi.fn(),
+  freeMtmdContext: vi.fn(),
+  supportVision: vi.fn(() => false),
+  inferSyncVision: vi.fn(() => ''),
+  inferStreamVision: vi.fn(),
+  inferBatch: vi.fn(),
+  jsonSchemaToGrammar: vi.fn(() => ''),
+  getEmbeddingDimension: vi.fn(() => 0),
+  createEmbeddingContext: vi.fn(),
+  embed: vi.fn(),
+  embedBatch: vi.fn(),
+  quantize: vi.fn(),
+  setLogCallback: vi.fn(),
+  setLogLevel: vi.fn(),
+  optimalThreadCount: vi.fn(() => 4),
+  benchmark: vi.fn(),
+};
 
-    constructor(path: string, options?: any) {
-      this.id = ++modelCounter;
-      // Encode size in the path for testing: "model-1000.gguf" → 1000 bytes
-      const match = path.match(/model-(\d+)/);
-      this.sizeBytes = match ? Number(match[1]) : 1000;
-    }
-
-    static fromBuffer(buffer: Buffer, options?: any): MockModel {
-      const instance = new MockModel('model-1000.gguf', options);
-      return instance;
-    }
-
-    dispose() {
-      this.disposed = true;
-    }
-  }
-
-  return { Model: MockModel };
+beforeEach(() => {
+  vi.clearAllMocks();
+  setNativeAddon(mockNative);
 });
 
 describe('ModelPool', () => {

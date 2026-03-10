@@ -1,21 +1,11 @@
-import { createHash } from 'node:crypto';
 import { readFile, writeFile, mkdir, rm, stat, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { hashModelUrl, type CacheEntry, type CacheIndex, type ModelRegistry } from 'local-llm-js-core';
 
-export interface CacheEntry {
-  url: string;
-  path: string;
-  size: number;
-  downloadedAt: string;
-  lastUsedAt: string;
-}
+export type { CacheEntry } from 'local-llm-js-core';
 
-interface CacheIndex {
-  models: Record<string, CacheEntry>;
-}
-
-export class ModelCache {
+export class ModelCache implements ModelRegistry {
   readonly cacheDir: string;
   private indexPath: string;
 
@@ -24,35 +14,29 @@ export class ModelCache {
     this.indexPath = join(this.cacheDir, 'index.json');
   }
 
-  /** Hash a URL to produce a stable directory name. */
   static hashUrl(url: string): string {
-    return createHash('sha256').update(url).digest('hex').slice(0, 16);
+    return hashModelUrl(url);
   }
 
-  /** Return the local path for a cached model, or null if not cached. */
   async getCachedModel(url: string): Promise<CacheEntry | null> {
     const index = await this.readIndex();
     const key = ModelCache.hashUrl(url);
     const entry = index.models[key];
     if (!entry) return null;
 
-    // Verify file still exists on disk
     try {
       await stat(entry.path);
     } catch {
-      // File was deleted externally — remove stale entry
       delete index.models[key];
       await this.writeIndex(index);
       return null;
     }
 
-    // Update lastUsedAt
     entry.lastUsedAt = new Date().toISOString();
     await this.writeIndex(index);
     return entry;
   }
 
-  /** Register a downloaded model in the cache index. */
   async cacheModel(url: string, filePath: string, size: number): Promise<CacheEntry> {
     const index = await this.readIndex();
     const key = ModelCache.hashUrl(url);
@@ -69,20 +53,17 @@ export class ModelCache {
     return entry;
   }
 
-  /** List all cached models. */
   async listModels(): Promise<CacheEntry[]> {
     const index = await this.readIndex();
     return Object.values(index.models);
   }
 
-  /** Remove a cached model by URL (deletes file + index entry). */
   async removeModel(url: string): Promise<boolean> {
     const index = await this.readIndex();
     const key = ModelCache.hashUrl(url);
     const entry = index.models[key];
     if (!entry) return false;
 
-    // Delete the model's directory
     const modelDir = join(this.cacheDir, key);
     try {
       await rm(modelDir, { recursive: true, force: true });
@@ -95,12 +76,9 @@ export class ModelCache {
     return true;
   }
 
-  /** Directory path for a given URL hash. */
   modelDir(url: string): string {
     return join(this.cacheDir, ModelCache.hashUrl(url));
   }
-
-  // -- internal --
 
   private async readIndex(): Promise<CacheIndex> {
     let raw: string;
@@ -117,10 +95,9 @@ export class ModelCache {
       return JSON.parse(raw) as CacheIndex;
     } catch {
       const backupPath = this.indexPath + '.corrupt.' + Date.now();
-      try { await rename(this.indexPath, backupPath); } catch { /* best-effort */ }
+      try { await rename(this.indexPath, backupPath); } catch { }
       console.warn(
-        `[local-llm] Cache index was corrupt and has been reset. ` +
-        `Backup saved to: ${backupPath}`,
+        `[local-llm] Cache index was corrupt and has been reset. Backup saved to: ${backupPath}`,
       );
       return { models: {} };
     }
