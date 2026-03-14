@@ -46,6 +46,19 @@ function run(cmd, args, opts = {}) {
   return (res.stdout || "").trim();
 }
 
+function runOptional(cmd, args) {
+  const res = spawnSync(cmd, args, {
+    cwd: repoRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+  });
+  return {
+    status: res.status ?? 1,
+    stdout: (res.stdout || "").trim(),
+    stderr: (res.stderr || "").trim(),
+  };
+}
+
 function readJson(relPath) {
   const abs = path.join(repoRoot, relPath);
   return JSON.parse(readFileSync(abs, "utf8"));
@@ -85,6 +98,13 @@ function ensureMainBranch() {
   }
 }
 
+function ensureVersionAvailableOnNpm(pkgName, version) {
+  const published = runOptional("npm", ["view", `${pkgName}@${version}`, "version"]);
+  if (published.status === 0 && published.stdout === version) {
+    throw new Error(`${pkgName}@${version} is already published on npm.`);
+  }
+}
+
 function updateVersions(nextVersion) {
   for (const relPath of packageFiles) {
     const pkg = readJson(relPath);
@@ -105,6 +125,7 @@ async function main() {
   try {
     const releasePkg = readJson(releasePkgPath);
     const current = releasePkg.version;
+    const pkgName = releasePkg.name;
 
     console.log(`Current version: ${current}`);
     console.log("Select release type:");
@@ -138,6 +159,7 @@ async function main() {
     ensureCleanGit();
     ensureMainBranch();
     run("git", ["pull", "--rebase"]);
+    ensureVersionAvailableOnNpm(pkgName, nextVersion);
 
     updateVersions(nextVersion);
     run("git", ["add", ...packageFiles]);
