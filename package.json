@@ -5,6 +5,7 @@
   "scripts": {
     "build:native": "pnpm --filter @local-llm/native build",
     "build": "pnpm --filter local-llm build",
+    "smoke:native": "pnpm --filter @local-llm/native run clean && pnpm --filter @local-llm/native exec cmake-js compile --CDGGML_METAL=OFF --CDLLAMA_BUILD_TESTS=OFF --CDLLAMA_BUILD_EXAMPLES=OFF --CDLLAMA_BUILD_TOOLS=OFF --CDLLAMA_BUILD_SERVER=OFF && node scripts/smoke-native-addon.js",
     "release": "node scripts/release.mjs",
     "test": "npx tsx scripts/test-full.ts",
     "test:unit": "pnpm --filter local-llm test",
