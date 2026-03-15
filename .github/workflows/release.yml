@@ -138,6 +138,12 @@ jobs:
       - name: Build main package
         run: pnpm --filter local-llm build
 
+      - name: Verify packed main package manifest
+        run: |
+          mkdir -p /tmp/local-llm-pack-check
+          env npm_config_cache=/tmp/local-llm-npm-cache npm pack --json --pack-destination /tmp/local-llm-pack-check ./packages/local-llm
+          node ./scripts/package-manifest-guard.mjs verify-tarball /tmp/local-llm-pack-check/local-llm-*.tgz
+
       - name: Publish main package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -41,6 +41,8 @@
   },
   "homepage": "https://github.com/hilum-labs/local-llm",
   "scripts": {
+    "prepack": "node ../../scripts/package-manifest-guard.mjs prepare packages/local-llm/package.json",
+    "postpack": "node ../../scripts/package-manifest-guard.mjs restore packages/local-llm/package.json",
     "build": "tsup src/index.ts src/native.ts --format esm --dts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
