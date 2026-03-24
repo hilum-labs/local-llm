@@ -148,6 +148,9 @@ Napi::Value CreateContext(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
+    // Strings that must outlive hilum_context_create
+    std::string moe_gguf_path_str, moe_pack_dir_str;
+
     hilum_context_params params = hilum_context_default_params();
     if (info.Length() >= 2 && info[1].IsObject()) {
         Napi::Object opts = info[1].As<Napi::Object>();
@@ -162,6 +165,33 @@ Napi::Value CreateContext(const Napi::CallbackInfo & info) {
             params.draft_model = opts.Get("draft_model").As<Napi::External<hilum_model>>().Data();
         if (opts.Has("draft_n_max"))
             params.draft_n_max = opts.Get("draft_n_max").As<Napi::Number>().Int32Value();
+        // Phase 4
+        if (opts.Has("kv_block_size") && opts.Get("kv_block_size").IsNumber())
+            params.kv_block_size = opts.Get("kv_block_size").As<Napi::Number>().Uint32Value();
+        // Phase M — MoE streaming
+        if (opts.Has("moe_gguf_path") && opts.Get("moe_gguf_path").IsString()) {
+            moe_gguf_path_str = opts.Get("moe_gguf_path").As<Napi::String>().Utf8Value();
+            params.moe_gguf_path = moe_gguf_path_str.c_str();
+        }
+        if (opts.Has("moe_pack_dir") && opts.Get("moe_pack_dir").IsString()) {
+            moe_pack_dir_str = opts.Get("moe_pack_dir").As<Napi::String>().Utf8Value();
+            params.moe_pack_dir = moe_pack_dir_str.c_str();
+        }
+        if (opts.Has("moe_n_io_threads") && opts.Get("moe_n_io_threads").IsNumber())
+            params.moe_n_io_threads = opts.Get("moe_n_io_threads").As<Napi::Number>().Uint32Value();
+        // Phase O — K override
+        if (opts.Has("moe_k_override") && opts.Get("moe_k_override").IsNumber())
+            params.moe_k_override = opts.Get("moe_k_override").As<Napi::Number>().Uint32Value();
+        // Phase E — RAM budget
+        if (opts.Has("ram_budget_fraction") && opts.Get("ram_budget_fraction").IsNumber())
+            params.ram_budget_fraction = opts.Get("ram_budget_fraction").As<Napi::Number>().FloatValue();
+        // Phase 2/6 — residency
+        if (opts.Has("residency_enable") && opts.Get("residency_enable").IsBoolean())
+            params.residency_enable = opts.Get("residency_enable").As<Napi::Boolean>().Value();
+        if (opts.Has("residency_lookahead") && opts.Get("residency_lookahead").IsNumber())
+            params.residency_lookahead = opts.Get("residency_lookahead").As<Napi::Number>().Uint32Value();
+        if (opts.Has("residency_io_threads") && opts.Get("residency_io_threads").IsNumber())
+            params.residency_io_threads = opts.Get("residency_io_threads").As<Napi::Number>().Uint32Value();
     }
 
     hilum_context * ctx = nullptr;
@@ -337,18 +367,60 @@ static hilum_gen_params parse_gen_params(const Napi::Object & opts) {
     if (opts.Has("presence_penalty"))   p.presence_penalty = opts.Get("presence_penalty").As<Napi::Number>().FloatValue();
     if (opts.Has("seed"))               p.seed = opts.Get("seed").As<Napi::Number>().Uint32Value();
     if (opts.Has("n_past"))             p.n_past = opts.Get("n_past").As<Napi::Number>().Int32Value();
+    if (opts.Has("min_keep") && opts.Get("min_keep").IsNumber())
+        p.min_keep = opts.Get("min_keep").As<Napi::Number>().Int32Value();
+    if (opts.Has("min_p") && opts.Get("min_p").IsNumber())
+        p.min_p = opts.Get("min_p").As<Napi::Number>().FloatValue();
+    if (opts.Has("typical_p") && opts.Get("typical_p").IsNumber())
+        p.typical_p = opts.Get("typical_p").As<Napi::Number>().FloatValue();
+    if (opts.Has("top_n_sigma") && opts.Get("top_n_sigma").IsNumber())
+        p.top_n_sigma = opts.Get("top_n_sigma").As<Napi::Number>().FloatValue();
+    if (opts.Has("xtc_probability") && opts.Get("xtc_probability").IsNumber())
+        p.xtc_probability = opts.Get("xtc_probability").As<Napi::Number>().FloatValue();
+    if (opts.Has("xtc_threshold") && opts.Get("xtc_threshold").IsNumber())
+        p.xtc_threshold = opts.Get("xtc_threshold").As<Napi::Number>().FloatValue();
+    if (opts.Has("dry_multiplier") && opts.Get("dry_multiplier").IsNumber())
+        p.dry_multiplier = opts.Get("dry_multiplier").As<Napi::Number>().FloatValue();
+    if (opts.Has("dry_base") && opts.Get("dry_base").IsNumber())
+        p.dry_base = opts.Get("dry_base").As<Napi::Number>().FloatValue();
+    if (opts.Has("dry_allowed_length") && opts.Get("dry_allowed_length").IsNumber())
+        p.dry_allowed_length = opts.Get("dry_allowed_length").As<Napi::Number>().Int32Value();
+    if (opts.Has("dry_penalty_last_n") && opts.Get("dry_penalty_last_n").IsNumber())
+        p.dry_penalty_last_n = opts.Get("dry_penalty_last_n").As<Napi::Number>().Int32Value();
+    if (opts.Has("adaptive_p_target") && opts.Get("adaptive_p_target").IsNumber())
+        p.adaptive_p_target = opts.Get("adaptive_p_target").As<Napi::Number>().FloatValue();
+    if (opts.Has("adaptive_p_decay") && opts.Get("adaptive_p_decay").IsNumber())
+        p.adaptive_p_decay = opts.Get("adaptive_p_decay").As<Napi::Number>().FloatValue();
+    if (opts.Has("mirostat") && opts.Get("mirostat").IsNumber())
+        p.mirostat = opts.Get("mirostat").As<Napi::Number>().Int32Value();
+    if (opts.Has("mirostat_tau") && opts.Get("mirostat_tau").IsNumber())
+        p.mirostat_tau = opts.Get("mirostat_tau").As<Napi::Number>().FloatValue();
+    if (opts.Has("mirostat_eta") && opts.Get("mirostat_eta").IsNumber())
+        p.mirostat_eta = opts.Get("mirostat_eta").As<Napi::Number>().FloatValue();
+    if (opts.Has("dynatemp_range") && opts.Get("dynatemp_range").IsNumber())
+        p.dynatemp_range = opts.Get("dynatemp_range").As<Napi::Number>().FloatValue();
+    if (opts.Has("dynatemp_exponent") && opts.Get("dynatemp_exponent").IsNumber())
+        p.dynatemp_exponent = opts.Get("dynatemp_exponent").As<Napi::Number>().FloatValue();
+    if (opts.Has("grammar_lazy") && opts.Get("grammar_lazy").IsBoolean())
+        p.grammar_lazy = opts.Get("grammar_lazy").As<Napi::Boolean>().Value();
     return p;
 }
 
-// Persistent grammar/grammar_root strings (must outlive gen_params usage)
+// Persistent grammar/grammar_root/dry_sequence_breakers strings (must outlive gen_params usage)
 struct GenContext {
     hilum_gen_params params;
     std::string grammar;
     std::string grammar_root;
+    std::vector<std::string> dry_breaker_strs;
+    std::vector<const char *> dry_breaker_ptrs;
 
     void finalize() {
         params.grammar      = grammar.empty()      ? nullptr : grammar.c_str();
         params.grammar_root  = grammar_root.empty() ? nullptr : grammar_root.c_str();
+        if (!dry_breaker_ptrs.empty()) {
+            params.dry_sequence_breakers     = dry_breaker_ptrs.data();
+            params.dry_sequence_breakers_len = static_cast<int32_t>(dry_breaker_ptrs.size());
+        }
     }
 };
 
@@ -357,6 +429,15 @@ static GenContext parse_gen_context(const Napi::Object & opts) {
     gc.params = parse_gen_params(opts);
     if (opts.Has("grammar"))      gc.grammar = opts.Get("grammar").As<Napi::String>().Utf8Value();
     if (opts.Has("grammar_root")) gc.grammar_root = opts.Get("grammar_root").As<Napi::String>().Utf8Value();
+    if (opts.Has("dry_sequence_breakers") && opts.Get("dry_sequence_breakers").IsArray()) {
+        Napi::Array arr = opts.Get("dry_sequence_breakers").As<Napi::Array>();
+        gc.dry_breaker_strs.resize(arr.Length());
+        gc.dry_breaker_ptrs.resize(arr.Length());
+        for (uint32_t i = 0; i < arr.Length(); i++) {
+            gc.dry_breaker_strs[i] = arr.Get(i).As<Napi::String>().Utf8Value();
+            gc.dry_breaker_ptrs[i] = gc.dry_breaker_strs[i].c_str();
+        }
+    }
     gc.finalize();
     return gc;
 }

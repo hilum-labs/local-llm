@@ -4,6 +4,8 @@ build/
 *.node
 pnpm-lock.yaml
 models/*.gguf
+models/*.gguf.idx
+models/.cache/
 .DS_Store
 Thumbs.db
 
