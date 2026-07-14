@@ -30,12 +30,15 @@ function modelPath() {
   return process.env.LOCAL_LLM_SMOKE_MODEL || process.env.LOCAL_LLM_PHASE0_MODEL || DEFAULT_MODEL_PATH;
 }
 
+function hasConfiguredModelPath() {
+  return Boolean(process.env.LOCAL_LLM_SMOKE_MODEL || process.env.LOCAL_LLM_PHASE0_MODEL);
+}
+
 async function main() {
   console.log("=== local-llm native smoke ===");
 
   assert("native addon exists", fs.existsSync(ADDON_PATH), ADDON_PATH);
-  assert("default model exists", fs.existsSync(modelPath()), modelPath());
-  if (!fs.existsSync(ADDON_PATH) || !fs.existsSync(modelPath())) {
+  if (!fs.existsSync(ADDON_PATH)) {
     process.exit(1);
   }
 
@@ -47,6 +50,7 @@ async function main() {
     "backendVersion",
     "createContext",
     "detokenize",
+    "freeEmbeddingContext",
     "freeContext",
     "freeModel",
     "inferStream",
@@ -62,6 +66,16 @@ async function main() {
 
   const backendVersion = String(native.backendVersion());
   assert("backend version is non-empty", backendVersion.length > 0);
+
+  if (!fs.existsSync(modelPath())) {
+    if (hasConfiguredModelPath()) {
+      fail("configured model exists", modelPath());
+    } else {
+      console.log(`SKIP  inference smoke -- model fixture not found at ${modelPath()}`);
+    }
+    console.log(`=== ${passed} passed, ${failed} failed ===`);
+    process.exit(failed > 0 ? 1 : 0);
+  }
 
   let model = null;
   let ctx = null;

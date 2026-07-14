@@ -9,7 +9,34 @@ permissions:
   contents: write
 
 jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate release
+        run: |
+          pnpm audit --audit-level high
+          pnpm test:unit
+          pnpm verify:core-version
+          pnpm run verify:release -- "$GITHUB_REF_NAME" --check-registry
+
   build:
+    needs: preflight
     strategy:
       fail-fast: false
       matrix:
@@ -35,25 +62,35 @@ jobs:
     name: Build ${{ matrix.platform }}-${{ matrix.arch }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.29.2
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Build native addon
         working-directory: packages/native
         run: npx cmake-js compile ${{ matrix.cmake_flags }} --CDLLAMA_BUILD_TESTS=OFF --CDLLAMA_BUILD_EXAMPLES=OFF --CDLLAMA_BUILD_TOOLS=OFF --CDLLAMA_BUILD_SERVER=OFF
+
+      - name: Native lifetime regression (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          curl --fail --location \
+            --output /tmp/stories15M-q4_0.gguf \
+            'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf?download=true'
+          test "$(sha256sum /tmp/stories15M-q4_0.gguf | cut -d ' ' -f1)" = \
+            "66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739"
+          LOCAL_LLM_SMOKE_MODEL=/tmp/stories15M-q4_0.gguf pnpm test:native-lifetime
 
       - name: Copy binary to platform package
         shell: bash
@@ -74,36 +111,25 @@ jobs:
     name: Publish to npm
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.29.2
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit and test package
+        run: pnpm audit --audit-level high && pnpm test:unit && pnpm verify:core-version
 
       - name: Validate release version
-        shell: bash
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PACKAGE_NAME=$(node -p "require('./packages/local-llm/package.json').name")
-          PACKAGE_VERSION=$(node -p "require('./packages/local-llm/package.json').version")
-
-          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
-            echo "Tag version ($TAG_VERSION) does not match packages/local-llm/package.json ($PACKAGE_VERSION)"
-            exit 1
-          fi
-
-          if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
-            echo "${PACKAGE_NAME}@${PACKAGE_VERSION} is already published on npm"
-            exit 1
-          fi
+        run: pnpm run verify:release -- "$GITHUB_REF_NAME" --check-registry
 
       - name: Download all platform artifacts
         uses: actions/download-artifact@v4
@@ -115,7 +141,7 @@ jobs:
           for dir in artifacts/local-llm-*/; do
             platform_name=$(basename "$dir" | sed 's/local-llm-//')
             target="packages/platforms/$platform_name/"
-            cp "$dir"local-llm.node "$target" 2>/dev/null || true
+            cp "$dir/local-llm.node" "$target/local-llm.node"
             echo "Copied binary to $target"
             ls -la "$target"
           done

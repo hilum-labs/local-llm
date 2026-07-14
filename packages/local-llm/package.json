@@ -49,7 +49,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "local-llm-js-core": "0.2.1"
+    "local-llm-js-core": "0.3.0"
   },
   "optionalDependencies": {
     "@local-llm/native": "workspace:*",

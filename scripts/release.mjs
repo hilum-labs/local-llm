@@ -19,8 +19,16 @@ const packageFiles = [
   "packages/platforms/linux-x64/package.json",
   "packages/platforms/win32-x64/package.json",
 ];
+const releaseCommitFiles = [...packageFiles, "pnpm-lock.yaml"];
 
 const releasePkgPath = "packages/local-llm/package.json";
+const publicPackageFiles = [
+  releasePkgPath,
+  "packages/platforms/darwin-arm64/package.json",
+  "packages/platforms/darwin-x64/package.json",
+  "packages/platforms/linux-x64/package.json",
+  "packages/platforms/win32-x64/package.json",
+];
 const internalPinnedDeps = [
   "@local-llm/darwin-arm64",
   "@local-llm/darwin-x64",
@@ -100,8 +108,13 @@ function ensureMainBranch() {
 
 function ensureVersionAvailableOnNpm(pkgName, version) {
   const published = runOptional("npm", ["view", `${pkgName}@${version}`, "version"]);
-  if (published.status === 0 && published.stdout === version) {
+  if (published.status === 0) {
     throw new Error(`${pkgName}@${version} is already published on npm.`);
+  }
+  const output = `${published.stdout}\n${published.stderr}`;
+  if (!/E404|404 Not Found/i.test(output)) {
+    if (output.trim()) console.error(output.trim());
+    throw new Error(`Could not verify npm availability for ${pkgName}@${version}.`);
   }
 }
 
@@ -125,10 +138,10 @@ async function main() {
   try {
     const releasePkg = readJson(releasePkgPath);
     const current = releasePkg.version;
-    const pkgName = releasePkg.name;
 
     console.log(`Current version: ${current}`);
     console.log("Select release type:");
+    console.log("0) release current prepared version");
     console.log("1) patch");
     console.log("2) minor");
     console.log("3) major");
@@ -136,7 +149,8 @@ async function main() {
 
     const choice = (await rl.question("Choice [1]: ")).trim() || "1";
     let nextVersion;
-    if (choice === "1") nextVersion = bump(current, "patch");
+    if (choice === "0") nextVersion = current;
+    else if (choice === "1") nextVersion = bump(current, "patch");
     else if (choice === "2") nextVersion = bump(current, "minor");
     else if (choice === "3") nextVersion = bump(current, "major");
     else if (choice === "4") {
@@ -159,11 +173,24 @@ async function main() {
     ensureCleanGit();
     ensureMainBranch();
     run("git", ["pull", "--rebase"]);
-    ensureVersionAvailableOnNpm(pkgName, nextVersion);
+    for (const relPath of publicPackageFiles) {
+      ensureVersionAvailableOnNpm(readJson(relPath).name, nextVersion);
+    }
 
-    updateVersions(nextVersion);
-    run("git", ["add", ...packageFiles]);
-    run("git", ["commit", "-m", `chore(release): v${nextVersion}`]);
+    if (nextVersion !== current) {
+      updateVersions(nextVersion);
+      run("pnpm", ["install", "--lockfile-only"]);
+    }
+    run("pnpm", ["install", "--frozen-lockfile"]);
+    run("pnpm", ["audit", "--audit-level", "high"]);
+    run("pnpm", ["test:unit"]);
+    run("pnpm", ["build"]);
+    run("pnpm", ["verify:core-version"]);
+    run("pnpm", ["run", "verify:release", "--", tag]);
+    if (nextVersion !== current) {
+      run("git", ["add", ...releaseCommitFiles]);
+      run("git", ["commit", "-m", `chore(release): v${nextVersion}`]);
+    }
     run("git", ["tag", "-a", tag, "-m", tag]);
     run("git", ["push", "origin", "HEAD"]);
     run("git", ["push", "origin", tag]);

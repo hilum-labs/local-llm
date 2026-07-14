@@ -33,20 +33,23 @@ jobs:
     name: Build ${{ matrix.platform }}-${{ matrix.arch }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 10.29.2
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit dependencies
+        run: pnpm audit --audit-level high
 
       - name: Build native addon
         working-directory: packages/native
@@ -68,6 +71,19 @@ jobs:
 
       - name: Build TypeScript package
         run: pnpm --filter local-llm build
+
+      - name: Unit tests
+        run: pnpm test:unit
+
+      - name: Native lifetime regression (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          curl --fail --location \
+            --output /tmp/stories15M-q4_0.gguf \
+            'https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf?download=true'
+          test "$(sha256sum /tmp/stories15M-q4_0.gguf | cut -d ' ' -f1)" = \
+            "66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739"
+          LOCAL_LLM_SMOKE_MODEL=/tmp/stories15M-q4_0.gguf pnpm test:native-lifetime
 
       - name: Smoke test — binary loads (non-Windows)
         if: matrix.platform != 'win32'

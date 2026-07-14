@@ -3,12 +3,15 @@
   "version": "1.0.3",
   "private": true,
   "main": "build/Release/hilum_native.node",
+  "engines": {
+    "node": "^20.17.0 || >=22.9.0"
+  },
   "scripts": {
     "build": "cmake-js compile --CDGGML_METAL=ON --CDGGML_METAL_EMBED_LIBRARY=ON --CDLLAMA_BUILD_TESTS=OFF --CDLLAMA_BUILD_EXAMPLES=OFF --CDLLAMA_BUILD_TOOLS=OFF --CDLLAMA_BUILD_SERVER=OFF",
     "clean": "cmake-js clean"
   },
   "dependencies": {
-    "cmake-js": "^7.3.0",
+    "cmake-js": "^8.0.0",
     "node-addon-api": "^8.3.0"
   }
 }

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- Retain models, inference contexts, embedding contexts, and vision projectors
+  until detached native workers complete, preventing use-after-free crashes.
+- Use the dedicated embedding-context destructor from the shared native contract.
+- Correct advanced sampler option mapping against Hilum engine API 1.0.1.
+
+### Changed
+
+- Added real-model native lifetime regression coverage and stronger binary smoke checks.
+- Upgraded the native build toolchain and locked dependency graph with no known vulnerabilities.
+
 ## [1.0.0] - 2025-03-02
 
 ### Added

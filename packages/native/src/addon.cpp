@@ -7,6 +7,8 @@
  */
 
 #include <napi.h>
+#include <memory>
+#include <mutex>
 #include <thread>
 #include <string>
 #include <vector>
@@ -30,16 +32,96 @@
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+struct ModelResource {
+    hilum_model * value;
+    std::shared_ptr<std::vector<uint8_t>> backing_buffer;
+
+    explicit ModelResource(
+        hilum_model * model,
+        std::shared_ptr<std::vector<uint8_t>> backing = nullptr)
+        : value(model), backing_buffer(std::move(backing)) {}
+
+    ~ModelResource() { hilum_model_free(value); }
+};
+
+struct ContextResource {
+    hilum_context * value;
+    std::shared_ptr<ModelResource> model;
+    std::shared_ptr<ModelResource> draft_model;
+    std::mutex operation_mutex;
+
+    ContextResource(
+        hilum_context * context,
+        std::shared_ptr<ModelResource> owner,
+        std::shared_ptr<ModelResource> draft = nullptr)
+        : value(context), model(std::move(owner)), draft_model(std::move(draft)) {}
+
+    ~ContextResource() { hilum_context_free(value); }
+};
+
+struct EmbeddingResource {
+    hilum_emb_ctx * value;
+    std::shared_ptr<ModelResource> model;
+    std::mutex operation_mutex;
+
+    EmbeddingResource(hilum_emb_ctx * context, std::shared_ptr<ModelResource> owner)
+        : value(context), model(std::move(owner)) {}
+
+    ~EmbeddingResource() { hilum_emb_context_free(value); }
+};
+
+struct MtmdResource {
+    hilum_mtmd * value;
+    std::shared_ptr<ModelResource> model;
+
+    MtmdResource(hilum_mtmd * context, std::shared_ptr<ModelResource> owner)
+        : value(context), model(std::move(owner)) {}
+
+    ~MtmdResource() { hilum_mtmd_free(value); }
+};
+
+template <typename Resource>
+struct NativeHandle {
+    std::mutex mutex;
+    std::shared_ptr<Resource> resource;
+
+    explicit NativeHandle(std::shared_ptr<Resource> owner) : resource(std::move(owner)) {}
+};
+
+using ModelHandle = NativeHandle<ModelResource>;
+using ContextHandle = NativeHandle<ContextResource>;
+using EmbeddingHandle = NativeHandle<EmbeddingResource>;
+using MtmdHandle = NativeHandle<MtmdResource>;
+
+template <typename Resource>
+static std::shared_ptr<Resource> get_resource(const Napi::Value & value) {
+    auto * handle = value.As<Napi::External<NativeHandle<Resource>>>().Data();
+    if (!handle) return nullptr;
+    std::lock_guard<std::mutex> lock(handle->mutex);
+    return handle->resource;
+}
+
+template <typename Resource>
+static void release_resource(const Napi::Value & value) {
+    auto * handle = value.As<Napi::External<NativeHandle<Resource>>>().Data();
+    if (!handle) return;
+    std::lock_guard<std::mutex> lock(handle->mutex);
+    handle->resource.reset();
+}
+
+template <typename Resource>
+static Napi::External<NativeHandle<Resource>> make_external(
+    Napi::Env env,
+    std::shared_ptr<Resource> resource)
+{
+    return Napi::External<NativeHandle<Resource>>::New(
+        env,
+        new NativeHandle<Resource>(std::move(resource)),
+        [](Napi::Env, NativeHandle<Resource> * handle) { delete handle; });
+}
+
 static std::string js_string(const Napi::Value & v) {
     return v.As<Napi::String>().Utf8Value();
-}
-
-static hilum_model * get_model(const Napi::Value & v) {
-    return v.As<Napi::External<hilum_model>>().Data();
-}
-
-static hilum_context * get_ctx(const Napi::Value & v) {
-    return v.As<Napi::External<hilum_context>>().Data();
 }
 
 // ── Backend info ────────────────────────────────────────────────────────────
@@ -85,7 +167,7 @@ Napi::Value LoadModel(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    return Napi::External<hilum_model>::New(env, model);
+    return make_external(env, std::make_shared<ModelResource>(model));
 }
 
 Napi::Value LoadModelFromBuffer(const Napi::CallbackInfo & info) {
@@ -107,18 +189,16 @@ Napi::Value LoadModelFromBuffer(const Napi::CallbackInfo & info) {
             params.use_mmap = opts.Get("use_mmap").As<Napi::Boolean>().Value();
     }
 
+    auto backing = std::make_shared<std::vector<uint8_t>>(buf.Data(), buf.Data() + buf.Length());
     hilum_model * model = nullptr;
-    hilum_error err = hilum_model_load_from_buffer(buf.Data(), buf.Length(), params, &model);
+    hilum_error err = hilum_model_load_from_buffer(backing->data(), backing->size(), params, &model);
     if (err != HILUM_OK) {
         Napi::Error::New(env, std::string("loadModelFromBuffer: ") + hilum_error_str(err))
             .ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
-    // Hold persistent ref to JS Buffer so GC won't collect it while model is alive
-    auto * ref = new Napi::Reference<Napi::Buffer<uint8_t>>(Napi::Persistent(buf));
-    return Napi::External<hilum_model>::New(env, model,
-        [ref](Napi::Env, hilum_model * m) { hilum_model_free(m); delete ref; });
+    return make_external(env, std::make_shared<ModelResource>(model, std::move(backing)));
 }
 
 Napi::Value GetModelSize(const Napi::CallbackInfo & info) {
@@ -128,13 +208,18 @@ Napi::Value GetModelSize(const Napi::CallbackInfo & info) {
             .ThrowAsJavaScriptException();
         return env.Undefined();
     }
-    return Napi::Number::New(env, static_cast<double>(hilum_model_size(get_model(info[0]))));
+    auto resource = get_resource<ModelResource>(info[0]);
+    if (!resource) {
+        Napi::Error::New(env, "getModelSize: model has been disposed").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    return Napi::Number::New(env, static_cast<double>(hilum_model_size(resource->value)));
 }
 
 Napi::Value FreeModel(const Napi::CallbackInfo & info) {
     Napi::Env env = info.Env();
     if (info.Length() >= 1 && info[0].IsExternal())
-        hilum_model_free(get_model(info[0]));
+        release_resource<ModelResource>(info[0]);
     return env.Undefined();
 }
 
@@ -148,9 +233,13 @@ Napi::Value CreateContext(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    // Strings that must outlive hilum_context_create
-    std::string moe_gguf_path_str, moe_pack_dir_str;
+    auto model_resource = get_resource<ModelResource>(info[0]);
+    if (!model_resource) {
+        Napi::Error::New(env, "createContext: model has been disposed").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
 
+    std::shared_ptr<ModelResource> draft_resource;
     hilum_context_params params = hilum_context_default_params();
     if (info.Length() >= 2 && info[1].IsObject()) {
         Napi::Object opts = info[1].As<Napi::Object>();
@@ -161,54 +250,37 @@ Napi::Value CreateContext(const Napi::CallbackInfo & info) {
         if (opts.Has("type_k"))          params.type_k = opts.Get("type_k").As<Napi::Number>().Int32Value();
         if (opts.Has("type_v"))          params.type_v = opts.Get("type_v").As<Napi::Number>().Int32Value();
         if (opts.Has("n_seq_max"))       params.n_seq_max = opts.Get("n_seq_max").As<Napi::Number>().Uint32Value();
-        if (opts.Has("draft_model") && opts.Get("draft_model").IsExternal())
-            params.draft_model = opts.Get("draft_model").As<Napi::External<hilum_model>>().Data();
+        if (opts.Has("draft_model") && opts.Get("draft_model").IsExternal()) {
+            draft_resource = get_resource<ModelResource>(opts.Get("draft_model"));
+            if (!draft_resource) {
+                Napi::Error::New(env, "createContext: draft model has been disposed")
+                    .ThrowAsJavaScriptException();
+                return env.Undefined();
+            }
+            params.draft_model = draft_resource->value;
+        }
         if (opts.Has("draft_n_max"))
             params.draft_n_max = opts.Get("draft_n_max").As<Napi::Number>().Int32Value();
-        // Phase 4
-        if (opts.Has("kv_block_size") && opts.Get("kv_block_size").IsNumber())
-            params.kv_block_size = opts.Get("kv_block_size").As<Napi::Number>().Uint32Value();
-        // Phase M — MoE streaming
-        if (opts.Has("moe_gguf_path") && opts.Get("moe_gguf_path").IsString()) {
-            moe_gguf_path_str = opts.Get("moe_gguf_path").As<Napi::String>().Utf8Value();
-            params.moe_gguf_path = moe_gguf_path_str.c_str();
-        }
-        if (opts.Has("moe_pack_dir") && opts.Get("moe_pack_dir").IsString()) {
-            moe_pack_dir_str = opts.Get("moe_pack_dir").As<Napi::String>().Utf8Value();
-            params.moe_pack_dir = moe_pack_dir_str.c_str();
-        }
-        if (opts.Has("moe_n_io_threads") && opts.Get("moe_n_io_threads").IsNumber())
-            params.moe_n_io_threads = opts.Get("moe_n_io_threads").As<Napi::Number>().Uint32Value();
-        // Phase O — K override
-        if (opts.Has("moe_k_override") && opts.Get("moe_k_override").IsNumber())
-            params.moe_k_override = opts.Get("moe_k_override").As<Napi::Number>().Uint32Value();
-        // Phase E — RAM budget
-        if (opts.Has("ram_budget_fraction") && opts.Get("ram_budget_fraction").IsNumber())
-            params.ram_budget_fraction = opts.Get("ram_budget_fraction").As<Napi::Number>().FloatValue();
-        // Phase 2/6 — residency
-        if (opts.Has("residency_enable") && opts.Get("residency_enable").IsBoolean())
-            params.residency_enable = opts.Get("residency_enable").As<Napi::Boolean>().Value();
-        if (opts.Has("residency_lookahead") && opts.Get("residency_lookahead").IsNumber())
-            params.residency_lookahead = opts.Get("residency_lookahead").As<Napi::Number>().Uint32Value();
-        if (opts.Has("residency_io_threads") && opts.Get("residency_io_threads").IsNumber())
-            params.residency_io_threads = opts.Get("residency_io_threads").As<Napi::Number>().Uint32Value();
     }
 
     hilum_context * ctx = nullptr;
-    hilum_error err = hilum_context_create(get_model(info[0]), params, &ctx);
+    hilum_error err = hilum_context_create(
+        model_resource ? model_resource->value : nullptr, params, &ctx);
     if (err != HILUM_OK) {
         Napi::Error::New(env, std::string("createContext: ") + hilum_error_str(err))
             .ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
-    return Napi::External<hilum_context>::New(env, ctx);
+    return make_external(
+        env,
+        std::make_shared<ContextResource>(ctx, std::move(model_resource), std::move(draft_resource)));
 }
 
 Napi::Value FreeContext(const Napi::CallbackInfo & info) {
     Napi::Env env = info.Env();
     if (info.Length() >= 1 && info[0].IsExternal())
-        hilum_context_free(get_ctx(info[0]));
+        release_resource<ContextResource>(info[0]);
     return env.Undefined();
 }
 
@@ -218,7 +290,12 @@ Napi::Value GetContextSize(const Napi::CallbackInfo & info) {
         Napi::TypeError::New(env, "getContextSize(ctx)").ThrowAsJavaScriptException();
         return env.Undefined();
     }
-    return Napi::Number::New(env, static_cast<double>(hilum_context_size(get_ctx(info[0]))));
+    auto resource = get_resource<ContextResource>(info[0]);
+    if (!resource) {
+        Napi::Error::New(env, "getContextSize: context has been disposed").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    return Napi::Number::New(env, static_cast<double>(hilum_context_size(resource->value)));
 }
 
 Napi::Value KvCacheClear(const Napi::CallbackInfo & info) {
@@ -227,7 +304,13 @@ Napi::Value KvCacheClear(const Napi::CallbackInfo & info) {
         Napi::TypeError::New(env, "kvCacheClear(ctx, fromPos)").ThrowAsJavaScriptException();
         return env.Undefined();
     }
-    hilum_context_kv_clear(get_ctx(info[0]), info[1].As<Napi::Number>().Int32Value());
+    auto resource = get_resource<ContextResource>(info[0]);
+    if (!resource) {
+        Napi::Error::New(env, "kvCacheClear: context has been disposed").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    std::lock_guard<std::mutex> operation_lock(resource->operation_mutex);
+    hilum_context_kv_clear(resource->value, info[1].As<Napi::Number>().Int32Value());
     return env.Undefined();
 }
 
@@ -237,7 +320,8 @@ Napi::Value StopStream(const Napi::CallbackInfo & info) {
         Napi::TypeError::New(env, "stopStream(ctx)").ThrowAsJavaScriptException();
         return env.Undefined();
     }
-    hilum_cancel(get_ctx(info[0]));
+    auto resource = get_resource<ContextResource>(info[0]);
+    if (resource) hilum_cancel(resource->value);
     return env.Undefined();
 }
 
@@ -251,7 +335,12 @@ Napi::Value Tokenize(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    hilum_model * model = get_model(info[0]);
+    auto model_resource = get_resource<ModelResource>(info[0]);
+    if (!model_resource) {
+        Napi::Error::New(env, "tokenize: model has been disposed").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    hilum_model * model = model_resource->value;
     std::string text = js_string(info[1]);
     bool add_special  = (info.Length() >= 3 && info[2].IsBoolean()) ? info[2].As<Napi::Boolean>().Value() : true;
     bool parse_special = (info.Length() >= 4 && info[3].IsBoolean()) ? info[3].As<Napi::Boolean>().Value() : false;
@@ -281,7 +370,12 @@ Napi::Value Detokenize(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    hilum_model * model = get_model(info[0]);
+    auto model_resource = get_resource<ModelResource>(info[0]);
+    if (!model_resource) {
+        Napi::Error::New(env, "detokenize: model has been disposed").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    hilum_model * model = model_resource->value;
 
     std::vector<int32_t> tokens;
     if (info[1].IsTypedArray()) {
@@ -321,7 +415,12 @@ Napi::Value ApplyChatTemplate(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    hilum_model * model = get_model(info[0]);
+    auto model_resource = get_resource<ModelResource>(info[0]);
+    if (!model_resource) {
+        Napi::Error::New(env, "applyChatTemplate: model has been disposed").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    hilum_model * model = model_resource->value;
     Napi::Array msgs_arr = info[1].As<Napi::Array>();
     bool add_assistant = (info.Length() >= 3 && info[2].IsBoolean()) ? info[2].As<Napi::Boolean>().Value() : true;
 
@@ -419,7 +518,7 @@ struct GenContext {
         params.grammar_root  = grammar_root.empty() ? nullptr : grammar_root.c_str();
         if (!dry_breaker_ptrs.empty()) {
             params.dry_sequence_breakers     = dry_breaker_ptrs.data();
-            params.dry_sequence_breakers_len = static_cast<int32_t>(dry_breaker_ptrs.size());
+            params.n_dry_sequence_breakers   = static_cast<int32_t>(dry_breaker_ptrs.size());
         }
     }
 };
@@ -469,8 +568,13 @@ Napi::Value InferSync(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    hilum_model * model = get_model(info[0]);
-    hilum_context * ctx = get_ctx(info[1]);
+    auto model_resource = get_resource<ModelResource>(info[0]);
+    auto context_resource = get_resource<ContextResource>(info[1]);
+    if (!model_resource || !context_resource) {
+        Napi::Error::New(env, "inferSync: model or context has been disposed")
+            .ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
     std::string prompt = js_string(info[2]);
 
     GenContext gc;
@@ -493,8 +597,10 @@ Napi::Value InferSync(const Napi::CallbackInfo & info) {
     std::vector<char> buf(gc.params.max_tokens * 64 + 1024);
     int32_t generated = 0;
 
-    hilum_error err = hilum_generate(model, ctx, prompt.c_str(), gc.params,
-                                      buf.data(), static_cast<int32_t>(buf.size()), &generated);
+    std::lock_guard<std::mutex> operation_lock(context_resource->operation_mutex);
+    hilum_error err = hilum_generate(
+        model_resource->value, context_resource->value, prompt.c_str(), gc.params,
+        buf.data(), static_cast<int32_t>(buf.size()), &generated);
     delete progress_ctx;
 
     if (err != HILUM_OK) {
@@ -536,8 +642,13 @@ Napi::Value InferStream(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    hilum_model * model = get_model(info[0]);
-    hilum_context * ctx = get_ctx(info[1]);
+    auto model_resource = get_resource<ModelResource>(info[0]);
+    auto context_resource = get_resource<ContextResource>(info[1]);
+    if (!model_resource || !context_resource) {
+        Napi::Error::New(env, "inferStream: model or context has been disposed")
+            .ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
     std::string prompt = js_string(info[2]);
 
     GenContext gc;
@@ -549,8 +660,11 @@ Napi::Value InferStream(const Napi::CallbackInfo & info) {
 
     TSFN tsfn = TSFN::New(env, info[4].As<Napi::Function>(), "InferStream", 0, 1);
 
-    std::thread([model, ctx, prompt, gc, tsfn]() mutable {
-        hilum_error err = hilum_generate_stream(model, ctx, prompt.c_str(), gc.params,
+    std::thread([model_resource, context_resource, prompt, gc, tsfn]() mutable {
+        gc.finalize();
+        std::lock_guard<std::mutex> operation_lock(context_resource->operation_mutex);
+        hilum_error err = hilum_generate_stream(
+            model_resource->value, context_resource->value, prompt.c_str(), gc.params,
             [](const char * token, int32_t token_len, void * ud) -> bool {
                 auto * tsfn_ptr = static_cast<TSFN *>(ud);
                 auto * data = new StreamData{std::string(token, token_len), false, ""};
@@ -579,7 +693,13 @@ Napi::Value GetEmbeddingDimension(const Napi::CallbackInfo & info) {
         Napi::TypeError::New(env, "getEmbeddingDimension(model)").ThrowAsJavaScriptException();
         return env.Undefined();
     }
-    return Napi::Number::New(env, hilum_emb_dimension(get_model(info[0])));
+    auto resource = get_resource<ModelResource>(info[0]);
+    if (!resource) {
+        Napi::Error::New(env, "getEmbeddingDimension: model has been disposed")
+            .ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    return Napi::Number::New(env, hilum_emb_dimension(resource->value));
 }
 
 Napi::Value CreateEmbeddingContext(const Napi::CallbackInfo & info) {
@@ -603,15 +723,26 @@ Napi::Value CreateEmbeddingContext(const Napi::CallbackInfo & info) {
         if (opts.Has("pooling_type"))  params.pooling_type = opts.Get("pooling_type").As<Napi::Number>().Int32Value();
     }
 
+    auto model_resource = get_resource<ModelResource>(info[0]);
     hilum_emb_ctx * ec = nullptr;
-    hilum_error err = hilum_emb_context_create(get_model(info[0]), params, &ec);
+    hilum_error err = hilum_emb_context_create(
+        model_resource ? model_resource->value : nullptr, params, &ec);
     if (err != HILUM_OK) {
         Napi::Error::New(env, std::string("createEmbeddingContext: ") + hilum_error_str(err))
             .ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
-    return Napi::External<hilum_emb_ctx>::New(env, ec);
+    return make_external(
+        env,
+        std::make_shared<EmbeddingResource>(ec, std::move(model_resource)));
+}
+
+Napi::Value FreeEmbeddingContext(const Napi::CallbackInfo & info) {
+    Napi::Env env = info.Env();
+    if (info.Length() >= 1 && info[0].IsExternal())
+        release_resource<EmbeddingResource>(info[0]);
+    return env.Undefined();
 }
 
 Napi::Value Embed(const Napi::CallbackInfo & info) {
@@ -621,8 +752,15 @@ Napi::Value Embed(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    hilum_emb_ctx * ctx = info[0].As<Napi::External<hilum_emb_ctx>>().Data();
-    hilum_model * model = get_model(info[1]);
+    auto embedding_resource = get_resource<EmbeddingResource>(info[0]);
+    auto model_resource = get_resource<ModelResource>(info[1]);
+    if (!embedding_resource || !model_resource) {
+        Napi::Error::New(env, "embed: model or embedding context has been disposed")
+            .ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    hilum_emb_ctx * ctx = embedding_resource ? embedding_resource->value : nullptr;
+    hilum_model * model = model_resource ? model_resource->value : nullptr;
     Napi::Int32Array tokens = info[2].As<Napi::Int32Array>();
 
     int32_t n_tokens = static_cast<int32_t>(tokens.ElementLength());
@@ -635,6 +773,7 @@ Napi::Value Embed(const Napi::CallbackInfo & info) {
     Napi::Float32Array result = Napi::Float32Array::New(env, n_embd);
     std::vector<float> emb(n_embd);
 
+    std::lock_guard<std::mutex> operation_lock(embedding_resource->operation_mutex);
     hilum_error err = hilum_embed(ctx, model, tok_vec.data(), n_tokens, emb.data(), n_embd);
     if (err != HILUM_OK) {
         Napi::Error::New(env, std::string("embed: ") + hilum_error_str(err))
@@ -654,8 +793,15 @@ Napi::Value EmbedBatch(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    hilum_emb_ctx * ctx = info[0].As<Napi::External<hilum_emb_ctx>>().Data();
-    hilum_model * model = get_model(info[1]);
+    auto embedding_resource = get_resource<EmbeddingResource>(info[0]);
+    auto model_resource = get_resource<ModelResource>(info[1]);
+    if (!embedding_resource || !model_resource) {
+        Napi::Error::New(env, "embedBatch: model or embedding context has been disposed")
+            .ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    hilum_emb_ctx * ctx = embedding_resource ? embedding_resource->value : nullptr;
+    hilum_model * model = model_resource ? model_resource->value : nullptr;
     Napi::Array tokenArrays = info[2].As<Napi::Array>();
 
     int32_t n_embd = hilum_emb_dimension(model);
@@ -680,6 +826,7 @@ Napi::Value EmbedBatch(const Napi::CallbackInfo & info) {
     std::vector<float *> emb_ptrs(n_inputs);
     for (uint32_t i = 0; i < n_inputs; i++) emb_ptrs[i] = emb_vecs[i].data();
 
+    std::lock_guard<std::mutex> operation_lock(embedding_resource->operation_mutex);
     hilum_error err = hilum_embed_batch(ctx, model, token_ptrs.data(), token_counts.data(),
                                          static_cast<int32_t>(n_inputs), emb_ptrs.data(), n_embd);
     if (err != HILUM_OK) {
@@ -739,8 +886,13 @@ Napi::Value InferBatch(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    hilum_model * model = get_model(info[0]);
-    hilum_context * ctx = get_ctx(info[1]);
+    auto model_resource = get_resource<ModelResource>(info[0]);
+    auto context_resource = get_resource<ContextResource>(info[1]);
+    if (!model_resource || !context_resource) {
+        Napi::Error::New(env, "inferBatch: model or context has been disposed")
+            .ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
     Napi::Array promptsArr = info[2].As<Napi::Array>();
 
     uint32_t n_seq = promptsArr.Length();
@@ -751,10 +903,8 @@ Napi::Value InferBatch(const Napi::CallbackInfo & info) {
     }
 
     std::vector<std::string> prompts(n_seq);
-    std::vector<const char *> prompt_ptrs(n_seq);
     for (uint32_t i = 0; i < n_seq; i++) {
         prompts[i] = promptsArr.Get(i).As<Napi::String>().Utf8Value();
-        prompt_ptrs[i] = prompts[i].c_str();
     }
 
     // Use first options entry for batch params (libhilum uses uniform params)
@@ -768,8 +918,15 @@ Napi::Value InferBatch(const Napi::CallbackInfo & info) {
 
     BatchTSFN tsfn = BatchTSFN::New(env, info[4].As<Napi::Function>(), "InferBatch", 0, 1);
 
-    std::thread([model, ctx, prompt_ptrs, prompts, n_seq, gc, tsfn]() mutable {
-        hilum_error err = hilum_generate_batch(model, ctx, prompt_ptrs.data(),
+    std::thread([model_resource, context_resource, prompts, n_seq, gc, tsfn]() mutable {
+        gc.finalize();
+        std::vector<const char *> prompt_ptrs(n_seq);
+        for (uint32_t i = 0; i < n_seq; ++i) {
+            prompt_ptrs[i] = prompts[i].c_str();
+        }
+        std::lock_guard<std::mutex> operation_lock(context_resource->operation_mutex);
+        hilum_error err = hilum_generate_batch(
+            model_resource->value, context_resource->value, prompt_ptrs.data(),
             static_cast<int32_t>(n_seq), gc.params,
             [](hilum_batch_event event, void * ud) -> bool {
                 auto * tsfn_ptr = static_cast<BatchTSFN *>(ud);
@@ -791,7 +948,7 @@ Napi::Value InferBatch(const Napi::CallbackInfo & info) {
             }, &tsfn);
 
         if (err != HILUM_OK && err != HILUM_ERR_CANCELLED) {
-            auto * data = new BatchStreamData{0, "", false, hilum_error_str(err), ""};
+            auto * data = new BatchStreamData{-1, "", false, hilum_error_str(err), ""};
             tsfn.BlockingCall(data);
         }
 
@@ -823,21 +980,26 @@ Napi::Value CreateMtmdContext(const Napi::CallbackInfo & info) {
         if (opts.Has("n_threads")) params.n_threads = opts.Get("n_threads").As<Napi::Number>().Uint32Value();
     }
 
+    auto model_resource = get_resource<ModelResource>(info[0]);
     hilum_mtmd * mtmd = nullptr;
-    hilum_error err = hilum_mtmd_load(get_model(info[0]), js_string(info[1]).c_str(), params, &mtmd);
+    hilum_error err = hilum_mtmd_load(
+        model_resource ? model_resource->value : nullptr,
+        js_string(info[1]).c_str(), params, &mtmd);
     if (err != HILUM_OK) {
         Napi::Error::New(env, std::string("createMtmdContext: ") + hilum_error_str(err))
             .ThrowAsJavaScriptException();
         return env.Undefined();
     }
 
-    return Napi::External<hilum_mtmd>::New(env, mtmd);
+    return make_external(
+        env,
+        std::make_shared<MtmdResource>(mtmd, std::move(model_resource)));
 }
 
 Napi::Value FreeMtmdContext(const Napi::CallbackInfo & info) {
     Napi::Env env = info.Env();
     if (info.Length() >= 1 && info[0].IsExternal())
-        hilum_mtmd_free(info[0].As<Napi::External<hilum_mtmd>>().Data());
+        release_resource<MtmdResource>(info[0]);
     return env.Undefined();
 }
 
@@ -847,8 +1009,9 @@ Napi::Value SupportVision(const Napi::CallbackInfo & info) {
         Napi::TypeError::New(env, "supportVision(mtmdCtx)").ThrowAsJavaScriptException();
         return env.Undefined();
     }
-    return Napi::Boolean::New(env, hilum_mtmd_supports_vision(
-        info[0].As<Napi::External<hilum_mtmd>>().Data()));
+    auto resource = get_resource<MtmdResource>(info[0]);
+    return Napi::Boolean::New(
+        env, hilum_mtmd_supports_vision(resource ? resource->value : nullptr));
 }
 
 // Helper: build hilum_image array from JS Buffer array
@@ -870,9 +1033,14 @@ Napi::Value InferSyncVision(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    hilum_model * model = get_model(info[0]);
-    hilum_context * ctx = get_ctx(info[1]);
-    hilum_mtmd * mtmd = info[2].As<Napi::External<hilum_mtmd>>().Data();
+    auto model_resource = get_resource<ModelResource>(info[0]);
+    auto context_resource = get_resource<ContextResource>(info[1]);
+    auto mtmd_resource = get_resource<MtmdResource>(info[2]);
+    if (!model_resource || !context_resource || !mtmd_resource) {
+        Napi::Error::New(env, "inferSyncVision: a native handle has been disposed")
+            .ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
     std::string prompt = js_string(info[3]);
     auto images = build_images(info[4].As<Napi::Array>());
 
@@ -886,7 +1054,9 @@ Napi::Value InferSyncVision(const Napi::CallbackInfo & info) {
     std::vector<char> buf(gc.params.max_tokens * 64 + 1024);
     int32_t generated = 0;
 
-    hilum_error err = hilum_generate_vision(model, ctx, mtmd, prompt.c_str(),
+    std::lock_guard<std::mutex> operation_lock(context_resource->operation_mutex);
+    hilum_error err = hilum_generate_vision(
+        model_resource->value, context_resource->value, mtmd_resource->value, prompt.c_str(),
         images.data(), static_cast<int32_t>(images.size()), gc.params,
         buf.data(), static_cast<int32_t>(buf.size()), &generated);
     if (err != HILUM_OK) {
@@ -908,9 +1078,14 @@ Napi::Value InferStreamVision(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    hilum_model * model = get_model(info[0]);
-    hilum_context * ctx = get_ctx(info[1]);
-    hilum_mtmd * mtmd = info[2].As<Napi::External<hilum_mtmd>>().Data();
+    auto model_resource = get_resource<ModelResource>(info[0]);
+    auto context_resource = get_resource<ContextResource>(info[1]);
+    auto mtmd_resource = get_resource<MtmdResource>(info[2]);
+    if (!model_resource || !context_resource || !mtmd_resource) {
+        Napi::Error::New(env, "inferStreamVision: a native handle has been disposed")
+            .ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
     std::string prompt = js_string(info[3]);
 
     // Build images on main thread (needs JS Buffer access)
@@ -933,13 +1108,18 @@ Napi::Value InferStreamVision(const Napi::CallbackInfo & info) {
 
     TSFN tsfn = TSFN::New(env, info[6].As<Napi::Function>(), "InferStreamVision", 0, 1);
 
-    std::thread([model, ctx, mtmd, prompt, img_copies, gc, tsfn]() mutable {
+    std::thread([
+        model_resource, context_resource, mtmd_resource,
+        prompt, img_copies, gc, tsfn]() mutable {
+        gc.finalize();
         std::vector<hilum_image> images;
         for (auto & ic : *img_copies) {
             images.push_back({ic.data.data(), ic.data.size()});
         }
 
-        hilum_error err = hilum_generate_vision_stream(model, ctx, mtmd, prompt.c_str(),
+        std::lock_guard<std::mutex> operation_lock(context_resource->operation_mutex);
+        hilum_error err = hilum_generate_vision_stream(
+            model_resource->value, context_resource->value, mtmd_resource->value, prompt.c_str(),
             images.data(), static_cast<int32_t>(images.size()), gc.params,
             [](const char * token, int32_t token_len, void * ud) -> bool {
                 auto * tsfn_ptr = static_cast<TSFN *>(ud);
@@ -970,7 +1150,15 @@ Napi::Value Warmup(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    hilum_error err = hilum_warmup(get_model(info[0]), get_ctx(info[1]));
+    auto model_resource = get_resource<ModelResource>(info[0]);
+    auto context_resource = get_resource<ContextResource>(info[1]);
+    if (!model_resource || !context_resource) {
+        Napi::Error::New(env, "warmup: model or context has been disposed")
+            .ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    std::lock_guard<std::mutex> operation_lock(context_resource->operation_mutex);
+    hilum_error err = hilum_warmup(model_resource->value, context_resource->value);
     if (err != HILUM_OK) {
         Napi::Error::New(env, std::string("warmup: ") + hilum_error_str(err))
             .ThrowAsJavaScriptException();
@@ -987,7 +1175,14 @@ Napi::Value GetPerf(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    hilum_perf_data perf = hilum_get_perf(get_ctx(info[0]));
+    auto context_resource = get_resource<ContextResource>(info[0]);
+    if (!context_resource) {
+        Napi::Error::New(env, "getPerf: context has been disposed")
+            .ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+    std::lock_guard<std::mutex> operation_lock(context_resource->operation_mutex);
+    hilum_perf_data perf = hilum_get_perf(context_resource->value);
 
     Napi::Object result = Napi::Object::New(env);
     result.Set("promptEvalMs",          Napi::Number::New(env, perf.prompt_eval_ms));
@@ -1099,14 +1294,18 @@ using LogTSFN = Napi::TypedThreadSafeFunction<void, LogCallbackData, LogJsCallba
 
 static LogTSFN g_log_tsfn;
 static bool g_log_tsfn_active = false;
+static std::mutex g_log_tsfn_mutex;
 
 Napi::Value SetLogCallback(const Napi::CallbackInfo & info) {
     Napi::Env env = info.Env();
 
-    if (g_log_tsfn_active) {
-        hilum_log_set(nullptr, nullptr);
-        g_log_tsfn.Release();
-        g_log_tsfn_active = false;
+    hilum_log_set(nullptr, nullptr);
+    {
+        std::lock_guard<std::mutex> lock(g_log_tsfn_mutex);
+        if (g_log_tsfn_active) {
+            g_log_tsfn.Release();
+            g_log_tsfn_active = false;
+        }
     }
 
     if (info.Length() < 1 || info[0].IsNull() || info[0].IsUndefined())
@@ -1118,13 +1317,19 @@ Napi::Value SetLogCallback(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    g_log_tsfn = LogTSFN::New(env, info[0].As<Napi::Function>(), "LogCallback", 0, 1);
-    g_log_tsfn_active = true;
+    {
+        std::lock_guard<std::mutex> lock(g_log_tsfn_mutex);
+        g_log_tsfn = LogTSFN::New(env, info[0].As<Napi::Function>(), "LogCallback", 0, 1);
+        g_log_tsfn_active = true;
+    }
 
     hilum_log_set([](hilum_log_level level, const char * text, void *) {
+        std::lock_guard<std::mutex> lock(g_log_tsfn_mutex);
         if (!g_log_tsfn_active) return;
         auto * data = new LogCallbackData{std::string(text), static_cast<int>(level)};
-        g_log_tsfn.BlockingCall(data);
+        if (g_log_tsfn.NonBlockingCall(data) != napi_ok) {
+            delete data;
+        }
     }, nullptr);
 
     return env.Undefined();
@@ -1178,8 +1383,13 @@ Napi::Value Benchmark(const Napi::CallbackInfo & info) {
         return env.Undefined();
     }
 
-    hilum_model * model = get_model(info[0]);
-    hilum_context * ctx = get_ctx(info[1]);
+    auto model_resource = get_resource<ModelResource>(info[0]);
+    auto context_resource = get_resource<ContextResource>(info[1]);
+    if (!model_resource || !context_resource) {
+        Napi::Error::New(env, "benchmark: model or context has been disposed")
+            .ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
 
     hilum_benchmark_params bp = hilum_benchmark_default_params();
     if (info.Length() >= 3 && info[2].IsObject()) {
@@ -1190,7 +1400,9 @@ Napi::Value Benchmark(const Napi::CallbackInfo & info) {
     }
 
     hilum_benchmark_result result = {};
-    hilum_error err = hilum_benchmark(model, ctx, bp, &result);
+    std::lock_guard<std::mutex> operation_lock(context_resource->operation_mutex);
+    hilum_error err = hilum_benchmark(
+        model_resource->value, context_resource->value, bp, &result);
     if (err != HILUM_OK) {
         Napi::Error::New(env, std::string("benchmark: ") + hilum_error_str(err))
             .ThrowAsJavaScriptException();
@@ -1236,6 +1448,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("jsonSchemaToGrammar",   Napi::Function::New(env, JsonSchemaToGrammar));
     exports.Set("getEmbeddingDimension", Napi::Function::New(env, GetEmbeddingDimension));
     exports.Set("createEmbeddingContext", Napi::Function::New(env, CreateEmbeddingContext));
+    exports.Set("freeEmbeddingContext",   Napi::Function::New(env, FreeEmbeddingContext));
     exports.Set("embed",                 Napi::Function::New(env, Embed));
     exports.Set("embedBatch",            Napi::Function::New(env, EmbedBatch));
     exports.Set("quantize",              Napi::Function::New(env, Quantize));
