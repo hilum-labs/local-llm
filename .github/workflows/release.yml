@@ -149,17 +149,7 @@ jobs:
       - name: Publish platform packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          for dir in packages/platforms/*/; do
-            if [ -f "$dir/local-llm.node" ]; then
-              echo "Publishing $(basename $dir)..."
-              cd "$dir"
-              npm publish --access public
-              cd -
-            else
-              echo "Skipping $(basename $dir) — no binary"
-            fi
-          done
+        run: node scripts/publish-packages.mjs packages/platforms/*
 
       - name: Build main package
         run: pnpm --filter local-llm build
@@ -173,8 +163,7 @@ jobs:
       - name: Publish main package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        working-directory: packages/local-llm
-        run: npm publish --access public
+        run: node scripts/publish-packages.mjs packages/local-llm
 
       - name: Prepare release assets
         run: |

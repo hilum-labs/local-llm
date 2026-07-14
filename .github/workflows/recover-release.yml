@@ -1,0 +1,100 @@
+name: Recover Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to recover
+        required: true
+        type: string
+      source_run_id:
+        description: Release run containing successful platform artifacts
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  recover:
+    name: Recover npm and GitHub release
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Check out release recovery tooling
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          path: .release-tools
+          sparse-checkout: scripts/publish-packages.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+
+      - name: Install and validate
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm audit --audit-level high
+          pnpm test:unit
+          pnpm verify:core-version
+          pnpm run verify:release -- "${{ inputs.tag }}"
+
+      - name: Download verified platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: local-llm-*
+          path: artifacts
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source_run_id }}
+
+      - name: Copy binaries to platform packages
+        run: |
+          for dir in artifacts/local-llm-*/; do
+            platform_name=$(basename "$dir" | sed 's/local-llm-//')
+            target="packages/platforms/$platform_name/"
+            cp "$dir/local-llm.node" "$target/local-llm.node"
+          done
+
+      - name: Publish missing platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node .release-tools/scripts/publish-packages.mjs packages/platforms/*
+
+      - name: Build and verify main package
+        run: |
+          pnpm --filter local-llm build
+          mkdir -p /tmp/local-llm-pack-check
+          env npm_config_cache=/tmp/local-llm-npm-cache npm pack --json --pack-destination /tmp/local-llm-pack-check ./packages/local-llm
+          node ./scripts/package-manifest-guard.mjs verify-tarball /tmp/local-llm-pack-check/local-llm-*.tgz
+
+      - name: Publish main package if missing
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node .release-tools/scripts/publish-packages.mjs packages/local-llm
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          for dir in artifacts/local-llm-*/; do
+            platform_name=$(basename "$dir" | sed 's/local-llm-//')
+            cp "$dir/local-llm.node" "release-assets/local-llm-${platform_name}.node"
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          generate_release_notes: true
+          files: release-assets/*.node
