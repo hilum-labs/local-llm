@@ -53,10 +53,10 @@
   },
   "optionalDependencies": {
     "@local-llm/native": "workspace:*",
-    "@local-llm/darwin-arm64": "1.0.3",
-    "@local-llm/darwin-x64": "1.0.3",
-    "@local-llm/linux-x64": "1.0.3",
-    "@local-llm/win32-x64": "1.0.3"
+    "@local-llm/darwin-arm64": "workspace:*",
+    "@local-llm/darwin-x64": "workspace:*",
+    "@local-llm/linux-x64": "workspace:*",
+    "@local-llm/win32-x64": "workspace:*"
   },
   "peerDependencies": {
     "ai": ">=4.0.0"

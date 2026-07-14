@@ -80,6 +80,14 @@ if (command === 'verify-tarball') {
     process.exit(1);
   }
 
+  const packed = JSON.parse(result.stdout);
+  for (const [name, version] of Object.entries(packed.optionalDependencies ?? {})) {
+    if (name.startsWith('@local-llm/') && version !== packed.version) {
+      console.error(`${name} must be pinned to packed version ${packed.version}; received ${version}`);
+      process.exit(1);
+    }
+  }
+
   process.exit(0);
 }
 

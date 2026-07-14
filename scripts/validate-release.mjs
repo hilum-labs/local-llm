@@ -28,8 +28,8 @@ for (const { path, value } of manifests) {
 const mainPackage = manifests.find(({ path }) => path === 'packages/local-llm/package.json').value;
 const platformPackages = manifests.filter(({ path }) => path.startsWith('packages/platforms/'));
 for (const { value } of platformPackages) {
-  if (mainPackage.optionalDependencies?.[value.name] !== version) {
-    throw new Error(`${mainPackage.name} must pin ${value.name} to ${version}`);
+  if (mainPackage.optionalDependencies?.[value.name] !== 'workspace:*') {
+    throw new Error(`${mainPackage.name} must link ${value.name} with workspace:* before packing`);
   }
 }
 

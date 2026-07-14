@@ -29,13 +29,6 @@ const publicPackageFiles = [
   "packages/platforms/linux-x64/package.json",
   "packages/platforms/win32-x64/package.json",
 ];
-const internalPinnedDeps = [
-  "@local-llm/darwin-arm64",
-  "@local-llm/darwin-x64",
-  "@local-llm/linux-x64",
-  "@local-llm/win32-x64",
-];
-
 function run(cmd, args, opts = {}) {
   const res = spawnSync(cmd, args, {
     cwd: repoRoot,
@@ -126,13 +119,6 @@ function updateVersions(nextVersion) {
   for (const relPath of packageFiles) {
     const pkg = readJson(relPath);
     pkg.version = nextVersion;
-    if (relPath === releasePkgPath && pkg.optionalDependencies) {
-      for (const dep of internalPinnedDeps) {
-        if (dep in pkg.optionalDependencies) {
-          pkg.optionalDependencies[dep] = nextVersion;
-        }
-      }
-    }
     writeJson(relPath, pkg);
   }
 }

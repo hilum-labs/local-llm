@@ -40,20 +40,20 @@ importers:
         version: 3.2.7(@types/node@25.9.5)(tsx@4.23.1)
     optionalDependencies:
       '@local-llm/darwin-arm64':
-        specifier: 1.0.3
-        version: 1.0.3
+        specifier: workspace:*
+        version: link:../platforms/darwin-arm64
       '@local-llm/darwin-x64':
-        specifier: 1.0.3
-        version: 1.0.3
+        specifier: workspace:*
+        version: link:../platforms/darwin-x64
       '@local-llm/linux-x64':
-        specifier: 1.0.3
-        version: 1.0.3
+        specifier: workspace:*
+        version: link:../platforms/linux-x64
       '@local-llm/native':
         specifier: workspace:*
         version: link:../native
       '@local-llm/win32-x64':
-        specifier: 1.0.3
-        version: 1.0.3
+        specifier: workspace:*
+        version: link:../platforms/win32-x64
 
   packages/native:
     dependencies:
@@ -295,26 +295,6 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
-
-  '@local-llm/darwin-arm64@1.0.3':
-    resolution: {integrity: sha512-OINVnZATA45K+Y9IwgJx9bOlzdWcxbk2u7ET/6cZsWdc7u8vI1rS3spNLYGLtQ5OyrL+AnMu0zj2oZV6QLQf8Q==}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@local-llm/darwin-x64@1.0.3':
-    resolution: {integrity: sha512-i+ZAkctiFcNPW6YYsSCKMPLSBkqnG3fQoW6ix5+D8T5Yv+GoYd9xKfqi0MuCzusujStiJ7OC6RAqerjmZEUwhQ==}
-    cpu: [x64]
-    os: [darwin]
-
-  '@local-llm/linux-x64@1.0.3':
-    resolution: {integrity: sha512-ptD6xWMxWAz95eWdDxuf4d73iOEVG8U3BNC/PSbGLG4enk2ni1Lb/XkBZTWIy5NZP5zvA3VbeXKCDywQdBG3Fw==}
-    cpu: [x64]
-    os: [linux]
-
-  '@local-llm/win32-x64@1.0.3':
-    resolution: {integrity: sha512-d901kU701f47X767nRjoap3CsD7hJfNx7OPWvytGSEkCBLxhHcELPfjV32TXsq+3g0m5VqhEI+DPLc1LF/IWPQ==}
-    cpu: [x64]
-    os: [win32]
 
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
@@ -1331,18 +1311,6 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
-
-  '@local-llm/darwin-arm64@1.0.3':
-    optional: true
-
-  '@local-llm/darwin-x64@1.0.3':
-    optional: true
-
-  '@local-llm/linux-x64@1.0.3':
-    optional: true
-
-  '@local-llm/win32-x64@1.0.3':
-    optional: true
 
   '@pkgjs/parseargs@0.11.0':
     optional: true
