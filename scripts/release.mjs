@@ -67,6 +67,10 @@ function runOptional(cmd, args) {
   };
 }
 
+function runPnpm(args) {
+  return run("corepack", ["pnpm", ...args]);
+}
+
 function readJson(relPath) {
   const abs = path.join(repoRoot, relPath);
   return JSON.parse(readFileSync(abs, "utf8"));
@@ -179,14 +183,14 @@ async function main() {
 
     if (nextVersion !== current) {
       updateVersions(nextVersion);
-      run("pnpm", ["install", "--lockfile-only"]);
+      runPnpm(["install", "--lockfile-only"]);
     }
-    run("pnpm", ["install", "--frozen-lockfile"]);
-    run("pnpm", ["audit", "--audit-level", "high"]);
-    run("pnpm", ["test:unit"]);
-    run("pnpm", ["build"]);
-    run("pnpm", ["verify:core-version"]);
-    run("pnpm", ["run", "verify:release", "--", tag]);
+    runPnpm(["install", "--frozen-lockfile"]);
+    runPnpm(["audit", "--audit-level", "high"]);
+    runPnpm(["test:unit"]);
+    runPnpm(["build"]);
+    runPnpm(["verify:core-version"]);
+    runPnpm(["run", "verify:release", "--", tag]);
     if (nextVersion !== current) {
       run("git", ["add", ...releaseCommitFiles]);
       run("git", ["commit", "-m", `chore(release): v${nextVersion}`]);
