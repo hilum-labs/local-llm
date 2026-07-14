@@ -35,9 +35,19 @@ function publish(packageDir, name, version) {
   for (let attempt = 0; attempt <= delays.length; attempt += 1) {
     console.log(`Publishing ${spec} (attempt ${attempt + 1}/${delays.length + 1})...`);
     const result = spawnSync('npm', ['publish', '--access', 'public', packageDir], {
-      stdio: 'inherit',
+      encoding: 'utf8',
     });
-    if (result.status === 0 || isPublished(name, version)) return;
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+
+    const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+    if (
+      result.status === 0 ||
+      /cannot publish over (?:the )?previously published versions?/i.test(output) ||
+      isPublished(name, version)
+    ) {
+      return;
+    }
     if (attempt === delays.length) break;
 
     console.log(`npm has not accepted ${spec}; retrying in ${delays[attempt] / 1000}s`);
