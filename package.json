@@ -1,7 +1,7 @@
 {
   "name": "@local-llm/workspace",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "packageManager": "pnpm@10.29.2",
   "scripts": {
     "build:native": "pnpm --filter @local-llm/native build",
