@@ -48,10 +48,11 @@ function publish(packageDir, name, version) {
 }
 
 for (const [index, packageDir] of packageDirs.entries()) {
+  const absolutePackageDir = resolve(packageDir);
   const manifest = JSON.parse(
-    readFileSync(resolve(packageDir, 'package.json'), 'utf8'),
+    readFileSync(resolve(absolutePackageDir, 'package.json'), 'utf8'),
   );
-  publish(packageDir, manifest.name, manifest.version);
+  publish(absolutePackageDir, manifest.name, manifest.version);
 
   // npm can briefly reject a write while processing the preceding packument.
   if (index < packageDirs.length - 1) sleep(15_000);
