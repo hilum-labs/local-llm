@@ -16,7 +16,7 @@ jobs:
             platform: darwin
             arch: arm64
             cmake_flags: "--CDGGML_METAL=ON --CDGGML_METAL_EMBED_LIBRARY=ON --CDGGML_LTO=ON"
-          - os: self-hosted
+          - os: macos-15-intel
             platform: darwin
             arch: x64
             cmake_flags: "--CDGGML_METAL=ON --CDGGML_METAL_EMBED_LIBRARY=ON --CDGGML_LTO=ON"
